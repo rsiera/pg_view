@@ -54,7 +54,6 @@ class PartitionStatCollectorTest(TestCase):
         dev_name = self.collector._dereference_dev_name('/dev/sda1')
         self.assertEqual('sda1', dev_name)
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.collectors.partition_collector.PartitionStatCollector.get_missing_io_stat_from_file')
     @mock.patch('pg_view.collectors.partition_collector.psutil.disk_io_counters')
     def test_get_io_data_should_return_data_when_disk_in_pnames(self, mocked_disk_io_counters,
@@ -76,7 +75,6 @@ class PartitionStatCollectorTest(TestCase):
 
         self.assertEqual(expected_data, io_data)
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.collectors.partition_collector.psutil.disk_io_counters')
     def test_get_io_data_should_return_empty_when_disk_not_in_pnames(self, mocked_disk_io_counters):
         mocked_disk_io_counters.return_value = {
@@ -87,14 +85,12 @@ class PartitionStatCollectorTest(TestCase):
         io_data = self.collector.get_io_data('sda2')
         self.assertEqual({}, io_data)
 
-    @unittest.skip('psutil')
     def test_get_name_from_fields_should_return_ok_when_linux_24(self):
         fields = [
             '8', '1', 'sda1', '11523', '7', '383474', '7304', '24134', '24124', '528624', '6276', '0', '5916', '13452']
         name = self.collector.get_name_from_fields(fields)
         self.assertEqual('sda1', name)
 
-    @unittest.skip('psutil')
     def test_get_name_from_fields_should_return_ok_when_linux_26(self):
         fields = [
             '0', '8', '1', 'sda2', '11523', '7', '383474', '7304', '24134', '24124', '528624', '6276', '0', '5916',
@@ -122,7 +118,7 @@ class PartitionStatCollectorTest(TestCase):
         mocked_get_missing_io_stat_from_file.assert_called_with(['sda1'])
 
     @unittest.skipUnless(psutil.LINUX, "Linux only")
-    @mock.patch('pg_view.models.collector_system.psutil._pslinux.open_text')
+    @mock.patch('pg_view.collectors.system_collector.psutil._pslinux.open_text')
     def test_get_missing_io_stat_from_file_should_return_empty_when_no_data_for_name(self, mocked_open_text):
         cpu_info_ok = os.path.join(TEST_DIR, 'proc_files', 'diskstat_24')
         mocked_open_text.return_value = open(cpu_info_ok, "rt")
@@ -131,7 +127,7 @@ class PartitionStatCollectorTest(TestCase):
         self.assertEqual(expected_data, refreshed_data)
 
     @unittest.skipUnless(psutil.LINUX, "Linux only")
-    @mock.patch('pg_view.models.collector_system.psutil._pslinux.open_text')
+    @mock.patch('pg_view.collectors.system_collector.psutil._pslinux.open_text')
     def test_get_missing_io_stat_from_file_should_return_stats_when_data_for_names_24(self, mocked_open_text):
         cpu_info_ok = os.path.join(TEST_DIR, 'proc_files', 'diskstat_24')
         mocked_open_text.return_value = open(cpu_info_ok, "rt")
@@ -140,7 +136,7 @@ class PartitionStatCollectorTest(TestCase):
         self.assertEqual(expected_data, refreshed_data)
 
     @unittest.skipUnless(psutil.LINUX, "Linux only")
-    @mock.patch('pg_view.models.collector_system.psutil._pslinux.open_text')
+    @mock.patch('pg_view.collectors.system_collector.psutil._pslinux.open_text')
     def test_get_missing_io_stat_from_file_should_return_stats_when_data_for_names_26(self, mocked_open_text):
         cpu_info_ok = os.path.join(TEST_DIR, 'proc_files', 'diskstat_26')
         mocked_open_text.return_value = open(cpu_info_ok, "rt")
@@ -237,14 +233,12 @@ class DetachedDiskStatCollectorTest(TestCase):
         self.assertEqual((4096, 4096,), df_data)
         mocked_os_statvfs.assert_not_called()
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.collectors.partition_collector.psutil.disk_partitions', return_value=[])
     def test_get_mounted_device_should_return_none_when_no_device_on_pathname(self, mocked_disk_partitions):
         detached_disk = DetachedDiskStatCollector(mock.Mock(), ['/var/lib/postgresql/9.3/main'])
         mounted_device = detached_disk.get_mounted_device('/test')
         self.assertIsNone(mounted_device)
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.collectors.partition_collector.psutil.disk_partitions')
     def test_get_mounted_device_should_return_dev_when_device_on_pathname(self, mocked_disk_partitions):
         device = mock.Mock(mountpoint='/', device='sda1')

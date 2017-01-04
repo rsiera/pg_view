@@ -6,8 +6,8 @@ import mock
 from freezegun import freeze_time
 
 from pg_view.collectors.host_collector import HostStatCollector
-from pg_view.factories import get_displayer_by_class
-from pg_view.models.outputs import ColumnType
+from pg_view.models.displayers import ColumnType
+from pg_view.models.outputs import get_displayer_by_class
 from pg_view.utils import OUTPUT_METHOD
 
 
@@ -29,12 +29,12 @@ class HostStatCollectorTest(TestCase):
         refreshed_data = self.collector._read_load_average()
         self.assertEqual({'loadavg': '3.47 3.16 2.89'}, refreshed_data)
 
-    # @freeze_time('2016-10-31 00:25:00')
-    # @mock.patch('pg_view.collectors.host_collector.psutil.boot_time', return_value=1477834496.0)
-    # def test_refresh_should_call_uptime(self, mocked_boot_time):
-    #     refreshed_data = self.collector._read_uptime()
-    #     expected_uptime = datetime(2016, 10, 31, 0, 25) - datetime.fromtimestamp(1477834496.0)
-    #     self.assertEqual({'uptime': str(expected_uptime)}, refreshed_data)
+    @freeze_time('2016-10-31 00:25:00')
+    @mock.patch('pg_view.collectors.host_collector.psutil.boot_time', return_value=1477834496.0)
+    def test_refresh_should_call_uptime(self, mocked_boot_time):
+        refreshed_data = self.collector._read_uptime()
+        expected_uptime = datetime(2016, 10, 31, 0, 25) - datetime.fromtimestamp(1477834496.0)
+        self.assertEqual({'uptime': str(expected_uptime)}, refreshed_data)
 
     @mock.patch('pg_view.collectors.host_collector.socket.gethostname', return_value='Macbook-Pro')
     def test__read_hostname_should_call_get_hostname(self, mocked_socket_gethostname):

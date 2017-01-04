@@ -1,12 +1,12 @@
-import glob
 import os
 import sys
 import time
 from multiprocessing import Process
+import psutil
 
 from pg_view import loggers
 from pg_view.collectors.base_collector import BaseStatCollector
-from pg_view.consts import TICK_LENGTH, RD
+from pg_view.consts import TICK_LENGTH, RD, SECTOR_SIZE
 from pg_view.models.formatters import FnFormatter, StatusFormatter
 from pg_view.models.outputs import COLALIGN
 
@@ -16,12 +16,8 @@ if sys.hexversion >= 0x03000000:
 
 class PartitionStatCollector(BaseStatCollector):
     """Collect statistics about PostgreSQL partitions """
-
-    DISK_STAT_FILE = '/proc/diskstats'
     DATA_NAME = 'data'
     XLOG_NAME = 'xlog'
-    XLOG_SUBDIR = 'pg_xlog/'
-    BLOCK_SIZE = 1024
 
     def __init__(self, dbname, dbversion, work_directory, consumer):
         super(PartitionStatCollector, self).__init__(ticks_per_refresh=1)
@@ -29,7 +25,6 @@ class PartitionStatCollector(BaseStatCollector):
         self.dbver = dbversion
         self.queue_consumer = consumer
         self.work_directory = work_directory
-
         self.status_formatter = StatusFormatter(self)
         self.fn_formatter = FnFormatter(self)
 
@@ -37,12 +32,6 @@ class PartitionStatCollector(BaseStatCollector):
             {'out': 'dev', 'in': 0, 'fn': self._dereference_dev_name},
             {'out': 'space_total', 'in': 1, 'fn': int},
             {'out': 'space_left', 'in': 2, 'fn': int}
-        ]
-
-        self.io_list_transformation = [
-            {'out': 'sectors_read', 'in': 5, 'fn': int},
-            {'out': 'sectors_written', 'in': 9, 'fn': int},
-            {'out': 'await', 'in': 13, 'fn': int}
         ]
 
         self.du_list_transformation = [
@@ -169,7 +158,7 @@ class PartitionStatCollector(BaseStatCollector):
 
         for pname in self.DATA_NAME, self.XLOG_NAME:
             if result[pname]['dev'] in io_out:
-                result[pname].update(self._transform_input(io_out[result[pname]['dev']], self.io_list_transformation))
+                result[pname].update(io_out.get(result[pname]['dev']))
             if pname in du_out:
                 result[pname].update(self._transform_input(du_out[pname], self.du_list_transformation))
             # set the type manually
@@ -187,29 +176,43 @@ class PartitionStatCollector(BaseStatCollector):
         return None
 
     def get_io_data(self, pnames):
-        """ Retrieve raw data from /proc/diskstat (transformations are perfromed via io_list_transformation)"""
-        result = {}
-        found = 0  # stop if we found records for all partitions
-        total = len(pnames)
-        try:
-            fp = None
-            fp = open(PartitionStatCollector.DISK_STAT_FILE, 'rU')
-            for l in fp:
-                elements = l.split()
-                for pname in pnames:
-                    if pname in elements:
-                        result[pname] = elements
-                        found += 1
-                        if found == total:
-                            break
-                if found == total:
-                    break
-        except:
-            loggers.logger.error('Unable to read {0}'.format(PartitionStatCollector.DISK_STAT_FILE))
-            result = {}
-        finally:
-            fp and fp.close()
-        return result
+        io_counters = psutil.disk_io_counters(perdisk=True)
+        stats_perdisk = {}
+        for disk, stats in io_counters.items():
+            if disk not in pnames:
+                continue
+            stats_perdisk[disk] = {
+                'sectors_read': stats.read_bytes / SECTOR_SIZE,
+                'sectors_written': stats.write_bytes / SECTOR_SIZE,
+                'await': 0
+            }
+
+        if psutil.LINUX:
+            refreshed_io_stats = self.get_missing_io_stat_from_file(pnames)
+            for disk, stats in stats_perdisk.items():
+                if disk in refreshed_io_stats:
+                    stats_perdisk[disk].update(refreshed_io_stats[disk])
+        return stats_perdisk
+
+    def get_missing_io_stat_from_file(self, pnames):
+        from psutil._pslinux import open_text, get_procfs_path
+        with open_text("%s/diskstats" % get_procfs_path()) as f:
+            lines = f.readlines()
+        missing_data_per_disk = {}
+
+        for line in lines:
+            fields = line.split()
+            if len(fields) >= 14:
+                name = self.get_name_from_fields(fields)
+                if name in pnames:
+                    missing_data_per_disk[name] = {'await': int(fields[13])}
+            else:
+                loggers.logger.warning('not sure how to interpret line %r" % line')
+        return missing_data_per_disk
+
+    def get_name_from_fields(self, fields):
+        # Linux 2.4, or Linux 2.6+, line referring to a disk
+        return fields[3] if len(fields) == 15 else fields[2]
 
     def output(self, displayer):
         return super(self.__class__, self).output(displayer, before_string='PostgreSQL partitions:', after_string='\n')
@@ -283,7 +286,6 @@ class DetachedDiskStatCollector(Process):
 
     def get_df_data(self, work_directory):
         """ Retrive raw data from df (transformations are performed via df_list_transformation) """
-
         result = {'data': [], 'xlog': []}
         # obtain the device names
         data_dev = self.get_mounted_device(self.get_mount_point(work_directory))
@@ -311,45 +313,12 @@ class DetachedDiskStatCollector(Process):
 
     @staticmethod
     def get_mounted_device(pathname):
-        """Get the device mounted at pathname"""
-
-        # uses "/proc/mounts"
-        raw_dev_name = None
-        dev_name = None
-        pathname = os.path.normcase(pathname)  # might be unnecessary here
-        try:
-            with open('/proc/mounts', 'r') as ifp:
-                for line in ifp:
-                    fields = line.rstrip('\n').split()
-                    # note that line above assumes that
-                    # no mount points contain whitespace
-                    if fields[1] == pathname and (fields[0])[:5] == '/dev/':
-                        raw_dev_name = dev_name = fields[0]
-                        break
-        except EnvironmentError:
-            pass
-        if raw_dev_name is not None and raw_dev_name[:11] == '/dev/mapper':
-            # we have to read the /sys/block/*/*/name and match with the rest of the device
-            for fname in glob.glob('/sys/block/*/*/name'):
-                try:
-                    with open(fname) as f:
-                        block_dev_name = f.read().strip()
-                except IOError:
-                    # ignore those files we couldn't read (lack of permissions)
-                    continue
-                if raw_dev_name[12:] == block_dev_name:
-                    # we found the proper device name, get the 3rd comonent of the path
-                    # i.e. /sys/block/dm-0/dm/name
-                    components = fname.split('/')
-                    if len(components) >= 4:
-                        dev_name = components[3]
-                    break
-        return dev_name
+        mounted_devices = [d.device for d in psutil.disk_partitions() if d.mountpoint == pathname]
+        return mounted_devices[0] if mounted_devices else None
 
     @staticmethod
     def get_mount_point(pathname):
         """Get the mounlst point of the filesystem containing pathname"""
-
         pathname = os.path.normcase(os.path.realpath(pathname))
         parent_device = path_device = os.stat(pathname).st_dev
         while parent_device == path_device:

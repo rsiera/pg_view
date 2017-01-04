@@ -1,1 +1,2 @@
 psycopg2
+psutil==5.0.0

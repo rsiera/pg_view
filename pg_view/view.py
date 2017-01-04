@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 import os
-import platform
 import sys
 import time
 import traceback
@@ -11,7 +10,6 @@ from optparse import OptionParser
 
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))  # noqa
-from pg_view.factories import get_displayer_by_class
 from pg_view.exceptions import NotConnectedError, NoPidConnectionError, DuplicatedConnectionError, \
     InvalidConnectionParamError
 from pg_view.loggers import setup_loggers
@@ -21,7 +19,7 @@ from pg_view.models.consumers import DiskCollectorConsumer
 from pg_view.models.db_client import make_cluster_desc, DBClient
 from pg_view import loggers
 from pg_view import consts
-from pg_view.models.outputs import CommonOutput, CursesOutput
+from pg_view.models.outputs import CommonOutput, CursesOutput, get_displayer_by_class
 from pg_view.utils import get_valid_output_methods, OUTPUT_METHOD, validate_autodetected_conn_param, \
     output_method_is_valid, read_configuration, process_single_collector, process_groups
 from pg_view.collectors.memory_collector import MemoryStatCollector
@@ -46,6 +44,10 @@ except ImportError:
     print('Unable to import ncurses, curses output will be unavailable')
     curses_available = False
 
+# setup system constants
+output_method = OUTPUT_METHOD.curses
+options = None
+
 
 def parse_args():
     """parse command-line options"""
@@ -59,7 +61,7 @@ def parse_args():
     parser.add_option('-o', '--output-method', help='send output to the following source', action='store',
                       default=OUTPUT_METHOD.curses, dest='output_method')
     parser.add_option('-V', '--use-version',
-                      help='version of the instance to monitor (in case it can\'t be autodetected)',
+                      help="version of the instance to monitor (in case it can't be autodetected)",
                       action='store', dest='version', type='float')
     parser.add_option('-l', '--log-file', help='direct log output to the file', action='store',
                       dest='log_file')
@@ -80,11 +82,6 @@ def parse_args():
 
     options, args = parser.parse_args()
     return options, args
-
-
-# setup system constants
-output_method = OUTPUT_METHOD.curses
-options = None
 
 
 # execution starts here
@@ -175,11 +172,6 @@ def do_loop(screen, groups, output_method, collectors, consumer):
 
 def main():
     global options
-
-    # bail out if we are not running Linux
-    if platform.system() != 'Linux':
-        print('Non Linux database hosts are not supported at the moment. Can not continue')
-        sys.exit(243)
 
     options, args = parse_args()
     consts.TICK_LENGTH = options.tick

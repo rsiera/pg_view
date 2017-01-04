@@ -3,15 +3,14 @@ from abc import ABCMeta
 from collections import namedtuple
 from numbers import Number
 
+from pg_view import loggers
 from pg_view.consts import NCURSES_CUSTOM_OUTPUT_FIELDS
 from pg_view.utils import enum
-from pg_view import loggers
 
 COLALIGN = enum(ca_none=0, ca_left=1, ca_center=2, ca_right=3)
 COLSTATUS = enum(cs_ok=0, cs_warning=1, cs_critical=2)
 COLTYPES = enum(ct_string=0, ct_number=1)
 COLHEADER = enum(ch_default=0, ch_prepend=1, ch_append=2)
-OUTPUT_METHOD = enum(console='console', json='json', curses='curses')
 
 
 class ColumnType(namedtuple('ColumnType', 'value header header_position')):

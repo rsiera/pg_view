@@ -15,7 +15,6 @@ class SystemStatCollectorTest(TestCase):
         self.collector = SystemStatCollector()
         super(SystemStatCollectorTest, self).setUp()
 
-    @unittest.skip('psutil')
     def test_refresh_should_contain_proper_data_keys(self):
         refreshed_data = self.collector.refresh()
         self.assertIn('stime', refreshed_data)
@@ -30,7 +29,6 @@ class SystemStatCollectorTest(TestCase):
         self.assertIn('utime', refreshed_data)
         self.assertIn('steal', refreshed_data)
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.collectors.system_collector.SystemStatCollector._refresh_cpu_time_values')
     @mock.patch('pg_view.collectors.system_collector.SystemStatCollector._do_refresh')
     @mock.patch('pg_view.collectors.system_collector.SystemStatCollector.read_cpu_stats')
@@ -64,7 +62,6 @@ class SystemStatCollectorTest(TestCase):
         refreshed_data = self.collector.get_missing_cpu_stat_from_file()
         self.assertEqual({b'procs_blocked': 0, b'procs_running': 1}, refreshed_data)
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.collectors.system_collector.psutil.cpu_times')
     def test_read_cpu_data_should_transform_input_when_cpu_times_for_linux(self, mocked_cpu_times):
         linux_scputimes = namedtuple('scputimes', 'user nice system idle iowait irq softirq steal guest')
@@ -79,7 +76,6 @@ class SystemStatCollectorTest(TestCase):
         }
         self.assertEqual(expected_data, refreshed_cpu)
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.collectors.system_collector.psutil.cpu_times')
     def test_read_cpu_data_should_transform_input_when_cpu_times_for_macos(self, mocked_cpu_times):
         macos_scputimes = namedtuple('scputimes', 'user system idle')
@@ -92,7 +88,6 @@ class SystemStatCollectorTest(TestCase):
         }
         self.assertEqual(expected_data, refreshed_cpu)
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.collectors.system_collector.psutil.cpu_stats')
     @mock.patch('pg_view.collectors.system_collector.psutil.LINUX', False)
     def test_read_cpu_data_should_transform_input_when_cpu_stats_for_macos(self, mocked_cpu_times):
@@ -104,7 +99,6 @@ class SystemStatCollectorTest(TestCase):
         expected_data = {'running': 0.0, 'ctxt': 12100, 'blocked': 0.0}
         self.assertEqual(expected_data, refreshed_cpu)
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.collectors.system_collector.psutil.cpu_stats')
     @mock.patch('pg_view.collectors.system_collector.psutil.LINUX', True)
     @mock.patch('pg_view.collectors.system_collector.SystemStatCollector.get_missing_cpu_stat_from_file')

@@ -1,6 +1,6 @@
+import os
 import re
 import resource
-import subprocess
 import sys
 
 from pg_view import consts
@@ -24,6 +24,7 @@ KB_IN_MB = 1024
 STAT_FIELD = enum(st_pid=0, st_process_name=1, st_state=2, st_ppid=3, st_start_time=21)
 BLOCK_SIZE = 1024
 MEM_PAGE_SIZE = resource.getpagesize()
+PAGESIZE = os.sysconf("SC_PAGE_SIZE")
 OUTPUT_METHOD = enum(console='console', json='json', curses='curses')
 
 
@@ -77,18 +78,11 @@ def get_valid_output_methods():
 
 
 def output_method_is_valid(method):
-    """
-    >>> output_method_is_valid('foo')
-    False
-    >>> output_method_is_valid('curses')
-    True
-    """
     return method in get_valid_output_methods()
 
 
 def read_configuration(config_file_name):
     # read PostgreSQL connection options
-    config_data = {}
     if not config_file_name:
         return None
     config = ConfigParser.ConfigParser()
@@ -96,15 +90,12 @@ def read_configuration(config_file_name):
     if not f:
         loggers.logger.error('Configuration file {0} is empty or not found'.format(config_file_name))
         return None
+
+    config_data = {}
     # get through all defined databases
     for section in config.sections():
         config_data[section] = {}
-        for argname in (
-                'port',
-                'host',
-                'user',
-                'dbname',
-        ):
+        for argname in ('port', 'host', 'user', 'dbname'):
             try:
                 val = config.get(section, argname)
             except ConfigParser.NoOptionError:
@@ -148,15 +139,6 @@ def validate_autodetected_conn_param(user_dbname, user_dbver, result_work_dir, c
             raise InvalidConnectionParamError
         if user_dbver is not None and user_dbver != connection_params.version:
             raise InvalidConnectionParamError
-
-
-def exec_command_with_output(cmdline):
-    """ Execute comand (including shell ones), return a tuple with error code (1 element) and output (rest) """
-    proc = subprocess.Popen(cmdline, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-    ret = proc.wait()
-    if ret != 0:
-        loggers.logger.info('The command {cmd} returned a non-zero exit code'.format(cmd=cmdline))
-    return ret, proc.stdout.read().strip()
 
 
 def time_field_to_seconds(val):

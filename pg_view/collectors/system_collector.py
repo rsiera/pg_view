@@ -1,12 +1,11 @@
-from pg_view import loggers
-from pg_view.collectors.base_collector import BaseStatCollector
+import psutil
+
+from pg_view.collectors.base_collector import BaseStatCollector, _remap_params
 from pg_view.consts import RD
 
 
 class SystemStatCollector(BaseStatCollector):
     """ Collect global system statistics, i.e. CPU/IO usage, not including memory. """
-
-    PROC_STAT_FILENAME = '/proc/stat'
 
     def __init__(self):
         super(SystemStatCollector, self).__init__()
@@ -136,20 +135,54 @@ class SystemStatCollector(BaseStatCollector):
         self.postinit()
 
     def refresh(self):
-        """ Read data from global /proc/stat """
+        cpu_times = self.read_cpu_times()
+        cpu_stats = self.read_cpu_stats()
+        result = dict(cpu_times, **cpu_stats)
 
-        result = {}
-        stat_data = self._read_proc_stat()
-        cpu_data = self._read_cpu_data(stat_data.get('cpu', []))
-        result.update(stat_data)
-        result.update(cpu_data)
-        self._refresh_cpu_time_values(cpu_data)
+        self._refresh_cpu_time_values(cpu_times)
         self._do_refresh([result])
         return result
 
-    def _refresh_cpu_time_values(self, cpu_data):
+    def read_cpu_times(self):
+        psutil_to_output_mapping = {
+            'guest': 'guest',
+            'idle': 'idle',
+            'iowait': 'iowait',
+            'irq': 'irq',
+            'softirq': 'softirq',
+            'steal': 'steal',
+            'system': 'stime',
+            'user': 'utime',
+        }
+
+        cpu_times = psutil.cpu_times()._asdict()
+        return _remap_params(cpu_times, psutil_to_output_mapping)
+
+    def read_cpu_stats(self):
+        psutil_to_output_mapping = {
+            'ctx_switches': 'ctxt',
+            'procs_running': 'running',
+            'procs_blocked': 'blocked',
+        }
+        cpu_stats = psutil.cpu_stats()._asdict()
+        if psutil.LINUX:
+            refreshed_cpu_stats = self.get_missing_cpu_stat_from_file()
+            cpu_stats.update(refreshed_cpu_stats)
+        return _remap_params(cpu_stats, psutil_to_output_mapping)
+
+    def get_missing_cpu_stat_from_file(self):
+        from psutil._pslinux import open_binary, get_procfs_path
+        missing_data = {}
+        with open_binary('%s/stat' % get_procfs_path()) as f:
+            for line in f:
+                name, args, value = line.strip().partition(b' ')
+                if name.startswith(b'procs_'):
+                    missing_data[name] = int(value)
+        return missing_data
+
+    def _refresh_cpu_time_values(self, cpu_times):
         # calculate the sum of all CPU indicators and store it.
-        total_cpu_time = sum(v for v in cpu_data.values() if v is not None)
+        total_cpu_time = sum(v for v in cpu_times.values() if v is not None)
         # calculate actual differences in cpu time values
         self.previos_total_cpu_time = self.current_total_cpu_time
         self.current_total_cpu_time = total_cpu_time
@@ -159,11 +192,6 @@ class SystemStatCollector(BaseStatCollector):
         if current.get(colname) and previous.get(colname) and self.cpu_time_diff > 0:
             return (current[colname] - previous[colname]) / self.cpu_time_diff
         return None
-
-    def _read_cpu_data(self, cpu_row):
-        """ Parse the cpu row from /proc/stat """
-
-        return self._transform_input(cpu_row)
 
     def output(self, displayer):
         return super(SystemStatCollector, self).output(displayer, before_string='System statistics:', after_string='\n')

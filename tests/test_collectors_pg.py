@@ -59,7 +59,6 @@ class PgStatCollectorTest(TestCase):
         self.assertEqual('unknown', pstype)
         self.assertIsNone(action)
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.collectors.pg_collector.psutil.Process')
     @mock.patch('pg_view.loggers.logger')
     def test_get_subprocesses_pid_should_return_empty_when_no_cmd_output(self, mocked_logger, mocked_process):
@@ -68,7 +67,6 @@ class PgStatCollectorTest(TestCase):
         self.assertEqual([], collector.get_subprocesses_pid())
         mocked_logger.info.assert_called_with("Couldn't determine the pid of subprocesses for 1049")
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.collectors.pg_collector.psutil.Process')
     def test_get_subprocesses_pid_should_return_subprocesses_when_children_processes(self, mocked_process):
         subprocesses = [mock.Mock(pid=1051), mock.Mock(pid=1052), mock.Mock(pid=1206)]
@@ -76,7 +74,6 @@ class PgStatCollectorTest(TestCase):
         collector = PgStatCollector.from_cluster(self.cluster, 1049)
         self.assertEqual([1051, 1052, 1206], collector.get_subprocesses_pid())
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.collectors.pg_collector.psutil.Process')
     def test__get_memory_usage_should_return_uss_when_memory_info_ok(self, mocked_psutil_process):
         mocked_psutil_process.return_value.memory_info.return_value = pmem(
@@ -128,8 +125,7 @@ class PgStatCollectorTest(TestCase):
         collector = PgStatCollector.from_cluster(cluster, 1049)
         self.assertEqual(SELECT_PGSTAT_NEVER_VERSION, collector.get_sql_pgstat_by_version())
 
-    @unittest.skip('psutil')
-    @mock.patch('pg_view.collectors.pg_collector.os')
+    @mock.patch('pg_view.utils.os')
     @mock.patch('pg_view.collectors.pg_collector.psutil.Process')
     def test__read_proc_should_return_data_when_process_ok(self, mocked_psutil_process, mocked_os):
         collector = PgStatCollector.from_cluster(self.cluster, 1049)
@@ -189,7 +185,6 @@ class PgStatCollectorTest(TestCase):
         info = collector.get_additional_proc_info(1049, {'cmdline': ''}, [10])
         self.assertEqual({'type': 'vacuum', 'cmdline': '', 'uss': 10}, info)
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_psinfo')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_memory_usage')
     def test_get_additional_info_should_update_when_backend_and_not_active(self, mocked__get_memory_usage,
@@ -331,7 +326,6 @@ class PgStatCollectorTest(TestCase):
         self.assertEqual(expected_results, result)
         mocked__do_refresh.assert_called_with(result)
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._try_reconnect')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_memory_usage', return_value=10)
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._read_pg_stat_activity')
@@ -351,7 +345,6 @@ class PgStatCollectorTest(TestCase):
         mocked_try_reconnect.assert_called_with()
         mocked__do_refresh.assert_called_with(result)
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._try_reconnect')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_memory_usage', return_value=10)
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._read_pg_stat_activity')
