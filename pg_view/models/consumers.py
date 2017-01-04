@@ -1,4 +1,9 @@
-from Queue import Empty
+import sys
+
+if sys.hexversion >= 0x03000000:
+    from queue import Empty
+else:
+    from Queue import Empty
 
 
 class DiskCollectorConsumer(object):

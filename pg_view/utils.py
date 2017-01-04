@@ -1,9 +1,14 @@
-import ConfigParser
 import re
 import resource
+import sys
 
 from pg_view import loggers
 from pg_view.consts import filter_aux, freeze
+
+if sys.hexversion >= 0x03000000:
+    import configparser as ConfigParser
+else:
+    import ConfigParser
 
 
 def enum(**enums):

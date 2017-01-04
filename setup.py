@@ -47,7 +47,7 @@ CLASSIFIERS = [
     'Topic :: Database'
 ]
 
-CONSOLE_SCRIPTS = ['pg_view = pg_view:main']
+CONSOLE_SCRIPTS = ['pg_view = pg_view.view:main']
 
 
 class PyTest(TestCommand):
@@ -79,7 +79,7 @@ class PyTest(TestCommand):
         params = {'args': self.test_args}
         if self.cov:
             params['args'] += self.cov
-        params['args'] += ['--doctest-modules', MAIN_MODULE + '.py', '-s', '-vv']
+        params['args'] += ['--doctest-modules', MAIN_MODULE, '-s', '-vv']
         errno = pytest.main(**params)
         sys.exit(errno)
 

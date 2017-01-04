@@ -10,7 +10,7 @@ import traceback
 from multiprocessing import JoinableQueue  # for then number of cpus
 from optparse import OptionParser
 
-import context  # noqa
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))  # noqa
 from pg_view.models.consumers import DiskCollectorConsumer
 from pg_view.models.parsers import get_postmasters_directories
 from pg_view.models.db_client import build_connection, detect_db_connection_arguments, \
@@ -20,7 +20,6 @@ from pg_view import consts
 from pg_view.models.outputs import CommonOutput, CursesOutput
 from pg_view.utils import get_valid_output_methods, OUTPUT_METHOD, \
     output_method_is_valid, read_configuration, process_single_collector, process_groups
-from pg_view.consts import TICK_LENGTH
 from pg_view.collectors.memory_collector import MemoryStatCollector
 from pg_view.collectors.partition_collector import PartitionStatCollector, DetachedDiskStatCollector
 from pg_view.collectors.pg_collector import PgstatCollector
@@ -158,7 +157,7 @@ def do_loop(screen, groups, output_method, collectors, consumer):
         if output_method == OUTPUT_METHOD.curses:
             output.refresh()
         if not consts.realtime:
-            time.sleep(TICK_LENGTH)
+            time.sleep(consts.TICK_LENGTH)
 
 
 def main():
