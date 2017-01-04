@@ -127,15 +127,13 @@ class HostStatCollector(StatCollector):
         return '{0} {1}'.format(row[0], row[2])
 
     def _read_uptime(self):
-        from pg_view.loggers import logger
-
         fp = None
         raw_result = []
         try:
             fp = open(HostStatCollector.UPTIME_FILE, 'rU')
             raw_result = fp.read().split()
         except:
-            logger.error('Unable to read uptime from {0}'.format(HostStatCollector.UPTIME_FILE))
+            loggers.logger.error('Unable to read uptime from {0}'.format(HostStatCollector.UPTIME_FILE))
         finally:
             fp and fp.close()
         return self._transform_input(raw_result, self.transform_uptime_data)
