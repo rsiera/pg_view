@@ -5,6 +5,7 @@
 
 # Packages
 *.egg
+*.eggs/
 *.egg-info
 dist
 build
@@ -35,5 +36,8 @@ htmlcov
 .mr.developer.cfg
 .project
 .pydevproject
+.idea/
+.vagrant/
+Vagrantfile
 
 pg_view.log

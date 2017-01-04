@@ -10,6 +10,7 @@ class DiskCollectorConsumer(object):
     """ consumes information from the disk collector and provides it for the local
         collector classes running in the same subprocess.
     """
+
     def __init__(self, q):
         self.result = {}
         self.cached_result = {}
@@ -28,11 +29,11 @@ class DiskCollectorConsumer(object):
         else:
             self.q.task_done()
 
-    def fetch(self, wd):
+    def fetch(self, work_directory):
         data = None
-        if wd in self.result:
-            data = self.result[wd]
-            del self.result[wd]
-        elif wd in self.cached_result:
-            data = self.cached_result[wd]
+        if work_directory in self.result:
+            data = self.result[work_directory]
+            del self.result[work_directory]
+        elif work_directory in self.cached_result:
+            data = self.cached_result[work_directory]
         return data

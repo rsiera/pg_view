@@ -1,9 +1,9 @@
 from pg_view import loggers
-from pg_view.collectors.base_collector import StatCollector
+from pg_view.collectors.base_collector import BaseStatCollector
+from pg_view.consts import RD
 
 
-class SystemStatCollector(StatCollector):
-
+class SystemStatCollector(BaseStatCollector):
     """ Collect global system statistics, i.e. CPU/IO usage, not including memory. """
 
     PROC_STAT_FILENAME = '/proc/stat'
@@ -17,29 +17,17 @@ class SystemStatCollector(StatCollector):
             {'out': 'idle', 'in': 3, 'fn': float},
             {'out': 'iowait', 'in': 4, 'fn': float},
             {'out': 'irq', 'in': 5, 'fn': float},
-            {
-                'out': 'softirq',
-                'in': 6,
-                'fn': float,
-                'optional': True,
-            },
-            {
-                'out': 'steal',
-                'in': 7,
-                'fn': float,
-                'optional': True,
-            },
-            {
-                'out': 'guest',
-                'in': 8,
-                'fn': float,
-                'optional': True,
-            },
+            {'out': 'softirq', 'in': 6, 'fn': float, 'optional': True},
+            {'out': 'steal', 'in': 7, 'fn': float, 'optional': True},
+            {'out': 'guest', 'in': 8, 'fn': float, 'optional': True}
         ]
 
-        self.transform_dict_data = [{'out': 'ctxt', 'fn': float}, {'out': 'cpu'}, {'out': 'running',
-                                    'in': 'procs_running', 'fn': int}, {'out': 'blocked', 'in': 'procs_blocked',
-                                    'fn': int}]
+        self.transform_dict_data = [
+            {'out': 'ctxt', 'fn': float},
+            {'out': 'cpu'},
+            {'out': 'running', 'in': 'procs_running', 'fn': int},
+            {'out': 'blocked', 'in': 'procs_blocked', 'fn': int}
+        ]
 
         self.diff_generator_data = [
             {'out': 'utime', 'fn': self._cpu_time_diff},
@@ -59,8 +47,8 @@ class SystemStatCollector(StatCollector):
             {
                 'out': 'utime',
                 'units': '%',
-                'fn': StatCollector.time_diff_to_percent,
-                'round': StatCollector.RD,
+                'fn': self.unit_converter.time_diff_to_percent,
+                'round': RD,
                 'minw': 5,
                 'pos': 0,
                 'warning': 50,
@@ -69,8 +57,8 @@ class SystemStatCollector(StatCollector):
             {
                 'out': 'stime',
                 'units': '%',
-                'fn': StatCollector.time_diff_to_percent,
-                'round': StatCollector.RD,
+                'fn': self.unit_converter.time_diff_to_percent,
+                'round': RD,
                 'pos': 1,
                 'minw': 5,
                 'warning': 10,
@@ -79,16 +67,16 @@ class SystemStatCollector(StatCollector):
             {
                 'out': 'idle',
                 'units': '%',
-                'fn': StatCollector.time_diff_to_percent,
-                'round': StatCollector.RD,
+                'fn': self.unit_converter.time_diff_to_percent,
+                'round': RD,
                 'pos': 2,
                 'minw': 5,
             },
             {
                 'out': 'iowait',
                 'units': '%',
-                'fn': StatCollector.time_diff_to_percent,
-                'round': StatCollector.RD,
+                'fn': self.unit_converter.time_diff_to_percent,
+                'round': RD,
                 'pos': 3,
                 'minw': 5,
                 'warning': 20,
@@ -97,27 +85,27 @@ class SystemStatCollector(StatCollector):
             {
                 'out': 'irq',
                 'units': '%',
-                'fn': StatCollector.time_diff_to_percent,
-                'round': StatCollector.RD,
+                'fn': self.unit_converter.time_diff_to_percent,
+                'round': RD,
             },
             {
                 'out': 'soft',
                 'in': 'softirq',
                 'units': '%',
-                'fn': StatCollector.time_diff_to_percent,
-                'round': StatCollector.RD,
+                'fn': self.unit_converter.time_diff_to_percent,
+                'round': RD,
             },
             {
                 'out': 'steal',
                 'units': '%',
-                'fn': StatCollector.time_diff_to_percent,
-                'round': StatCollector.RD,
+                'fn': self.unit_converter.time_diff_to_percent,
+                'round': RD,
             },
             {
                 'out': 'guest',
                 'units': '%',
-                'fn': StatCollector.time_diff_to_percent,
-                'round': StatCollector.RD,
+                'fn': self.unit_converter.time_diff_to_percent,
+                'round': RD,
             },
             {
                 'out': 'ctxt',
@@ -145,7 +133,6 @@ class SystemStatCollector(StatCollector):
         self.current_total_cpu_time = 0
         self.cpu_time_diff = 0
         self.ncurses_custom_fields = {'header': False, 'prefix': 'sys: ', 'prepend_column_headers': True}
-
         self.postinit()
 
     def refresh(self):
@@ -158,6 +145,7 @@ class SystemStatCollector(StatCollector):
         result.update(cpu_data)
         self._refresh_cpu_time_values(cpu_data)
         self._do_refresh([result])
+        return result
 
     def _refresh_cpu_time_values(self, cpu_data):
         # calculate the sum of all CPU indicators and store it.
@@ -167,37 +155,15 @@ class SystemStatCollector(StatCollector):
         self.current_total_cpu_time = total_cpu_time
         self.cpu_time_diff = self.current_total_cpu_time - self.previos_total_cpu_time
 
-    def _read_proc_stat(self):
-        """ see man 5 proc for details (/proc/stat). We don't parse cpu info here """
-
-        raw_result = {}
-        result = {}
-        try:
-            fp = open(SystemStatCollector.PROC_STAT_FILENAME, 'rU')
-            # split /proc/stat into the name - value pairs
-            for line in fp:
-                elements = line.strip().split()
-                if len(elements) > 2:
-                    raw_result[elements[0]] = elements[1:]
-                elif len(elements) > 1:
-                    raw_result[elements[0]] = elements[1]
-                # otherwise, the line is probably empty or bogus and should be skipped
-            result = self._transform_input(raw_result)
-        except IOError:
-            loggers.logger.error(
-                'Unable to read {0}, global data will be unavailable'.format(self.PROC_STAT_FILENAME))
-        return result
-
-    def _cpu_time_diff(self, colname, cur, prev):
-        if cur.get(colname, None) and prev.get(colname, None) and self.cpu_time_diff > 0:
-            return (cur[colname] - prev[colname]) / self.cpu_time_diff
-        else:
-            return None
+    def _cpu_time_diff(self, colname, current, previous):
+        if current.get(colname) and previous.get(colname) and self.cpu_time_diff > 0:
+            return (current[colname] - previous[colname]) / self.cpu_time_diff
+        return None
 
     def _read_cpu_data(self, cpu_row):
         """ Parse the cpu row from /proc/stat """
 
         return self._transform_input(cpu_row)
 
-    def output(self, method):
-        return super(SystemStatCollector, self).output(method, before_string='System statistics:', after_string='\n')
+    def output(self, displayer):
+        return super(SystemStatCollector, self).output(displayer, before_string='System statistics:', after_string='\n')
