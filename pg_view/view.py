@@ -16,7 +16,6 @@ from pg_view.exceptions import NotConnectedError, NoPidConnectionError, Duplicat
 from pg_view.loggers import setup_loggers
 from pg_view.models.parsers import ProcWorker
 
-from pg_view.models.consumers import DiskCollectorConsumer
 from pg_view.models.db_client import make_cluster_desc, DBClient
 from pg_view import loggers
 from pg_view import consts
@@ -24,7 +23,8 @@ from pg_view.models.outputs import CommonOutput, CursesOutput, get_displayer_by_
 from pg_view.utils import get_valid_output_methods, OUTPUT_METHOD, validate_autodetected_conn_param, \
     output_method_is_valid, read_configuration, process_single_collector, process_groups
 from pg_view.collectors.memory_collector import MemoryStatCollector
-from pg_view.collectors.partition_collector import PartitionStatCollector, DetachedDiskStatCollector
+from pg_view.collectors.partition_collector import PartitionStatCollector, DetachedDiskStatCollector, \
+    DiskCollectorConsumer
 from pg_view.collectors.pg_collector import PgStatCollector
 from pg_view.collectors.system_collector import SystemStatCollector
 from pg_view.collectors.host_collector import HostStatCollector

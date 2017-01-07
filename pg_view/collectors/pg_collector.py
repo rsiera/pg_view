@@ -496,5 +496,5 @@ class PgStatCollector(BaseStatCollector):
                             blocked_temp.extend(self.blocked_diffs[child_row['pid']])
                             del self.blocked_diffs[child_row['pid']]
 
-    def output(self, displayer):
-        return super(self.__class__, self).output(displayer, before_string='PostgreSQL processes:', after_string='\n')
+    def output(self, displayer, before_string=None, after_string=None):
+        return super(PgStatCollector, self).output(displayer, before_string='PostgreSQL processes:', after_string='\n')

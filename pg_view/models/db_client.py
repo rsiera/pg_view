@@ -14,8 +14,8 @@ def read_postmaster_pid(work_directory, dbname):
         pid = fp.readline().strip()
     except:
         # XXX: do not bail out in case we are collecting data for multiple PostgreSQL clusters
-        loggers.logger.error('Unable to read postmaster.pid for {name} at {wd}\n HINT: \
-            make sure Postgres is running'.format(name=dbname, wd=work_directory))
+        loggers.logger.error('Unable to read postmaster.pid for {name} at {wd}\n HINT: '
+                             'make sure Postgres is running'.format(name=dbname, wd=work_directory))
         return None
     finally:
         if fp is not None:

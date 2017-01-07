@@ -182,5 +182,5 @@ class SystemStatCollector(BaseStatCollector):
         """ Parse the cpu row from /proc/stat """
         return self._transform_input(cpu_row)
 
-    def output(self, displayer):
+    def output(self, displayer, before_string=None, after_string=None):
         return super(SystemStatCollector, self).output(displayer, before_string='System statistics:', after_string='\n')

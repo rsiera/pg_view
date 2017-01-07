@@ -124,5 +124,5 @@ class HostStatCollector(BaseStatCollector):
     def _read_uname(self):
         return self._transform_input(os.uname(), self.transform_uname_data)
 
-    def output(self, displayer):
-        return super(self.__class__, self).output(displayer, before_string='Host statistics', after_string='\n')
+    def output(self, displayer, before_string=None, after_string=None):
+        return super(HostStatCollector, self).output(displayer, before_string='Host statistics', after_string='\n')

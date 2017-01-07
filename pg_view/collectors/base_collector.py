@@ -10,14 +10,6 @@ def warn_non_optional_column(colname):
     loggers.logger.error('Column {0} is not optional, but input row has no value for it'.format(colname))
 
 
-def _remap_params(psutil_data, mapping):
-    mapped_data = dict.fromkeys(mapping.values(), 0.0)
-    for param, value in psutil_data.items():
-        if param in mapping.keys():
-            mapped_data[mapping[param]] = value
-    return mapped_data
-
-
 class BaseStatCollector(object):
     """ Generic class to store abstract function and data required to collect system statistics,
         produce diffs and emit output rows.
