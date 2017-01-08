@@ -139,5 +139,5 @@ class MemoryStatCollector(BaseStatCollector):
     def _is_commit(self, row):
         return row.get('CommitLimit') is not None and row.get('Committed_AS') is not None
 
-    def output(self, displayer):
-        return super(self.__class__, self).output(displayer, before_string='Memory statistics:', after_string='\n')
+    def output(self, displayer, before_string=None, after_string=None):
+        return super(MemoryStatCollector, self).output(displayer, before_string='Memory statistics:', after_string='\n')

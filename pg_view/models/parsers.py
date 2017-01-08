@@ -1,6 +1,6 @@
+import os
 from collections import defaultdict, namedtuple
 
-import os
 import psutil
 import re
 
@@ -22,7 +22,6 @@ class ProcWorker(object):
         process_candidates = self._get_postgres_processes()
         process_candidates_pids = [p.pid for p in process_candidates]
 
-        # Omitting start_time, I assume that lower pid is started earlier
         for proc in process_candidates:
             ppid = proc.ppid()
             # if parent is also a postgres process - no way this is a postmaster

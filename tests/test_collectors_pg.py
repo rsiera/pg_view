@@ -386,7 +386,7 @@ class PgStatCollectorTest(TestCase):
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector.get_subprocesses_pid', return_value=[1010])
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector.get_proc_data')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._do_refresh')
-    def test_refresh_should_return_none_when_try_reconnect_raises_error(self, mocked__do_refresh, mocked_get_proc_data,
+    def test_refresh_should_return_empty_when_try_reconnect_raises_error(self, mocked__do_refresh, mocked_get_proc_data,
                                                                         mocked_get_subprocesses_pid,
                                                                         mocked__read_pg_stat_activity,
                                                                         mocked___get_memory_usage,
@@ -398,5 +398,5 @@ class PgStatCollectorTest(TestCase):
         collector.pgcon = None
         mocked_try_reconnect.side_effect = psycopg2.OperationalError
         result = collector.refresh()
-        self.assertIsNone(result)
+        self.assertEqual([], result)
         mocked__do_refresh.assert_called_with([])

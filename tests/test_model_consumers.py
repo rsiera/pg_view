@@ -2,7 +2,7 @@ from unittest import TestCase
 
 import mock
 
-from pg_view.models.consumers import DiskCollectorConsumer
+from pg_view.collectors.partition_collector import DiskCollectorConsumer
 
 
 class DiskCollectorConsumerTest(TestCase):

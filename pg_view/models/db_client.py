@@ -14,8 +14,8 @@ def read_postmaster_pid(work_directory, dbname):
         pid = fp.readline().strip()
     except:
         # XXX: do not bail out in case we are collecting data for multiple PostgreSQL clusters
-        msg = 'Unable to read postmaster.pid for {name} at {wd}\n HINT: make sure Postgres is running'
-        loggers.logger.error(msg.format(name=dbname, wd=work_directory))
+        loggers.logger.error('Unable to read postmaster.pid for {name} at {wd}\n HINT: '
+                             'make sure Postgres is running'.format(name=dbname, wd=work_directory))
         return None
     finally:
         if fp is not None:
@@ -177,10 +177,10 @@ class DBClient(object):
     def execute_query_and_fetchone(self, pgcon):
         cur = pgcon.cursor()
         cur.execute(self.SHOW_COMMAND)
-        work_directory = cur.fetchone()[0]
+        entry = cur.fetchone()[0]
         cur.close()
         pgcon.commit()
-        return work_directory
+        return entry
 
     @classmethod
     def from_config(cls, config):

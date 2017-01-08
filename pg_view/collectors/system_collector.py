@@ -193,5 +193,5 @@ class SystemStatCollector(BaseStatCollector):
             return (current[colname] - previous[colname]) / self.cpu_time_diff
         return None
 
-    def output(self, displayer):
+    def output(self, displayer, before_string=None, after_string=None):
         return super(SystemStatCollector, self).output(displayer, before_string='System statistics:', after_string='\n')

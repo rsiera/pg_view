@@ -1,6 +1,7 @@
 import os
 import re
 import resource
+import subprocess
 import sys
 
 import psutil

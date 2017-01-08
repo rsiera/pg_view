@@ -12,6 +12,9 @@ from pg_view.models.outputs import COLALIGN
 
 if sys.hexversion >= 0x03000000:
     long = int
+    from queue import Empty
+else:
+    from Queue import Empty
 
 
 class PartitionStatCollector(BaseStatCollector):
@@ -214,8 +217,9 @@ class PartitionStatCollector(BaseStatCollector):
         # Linux 2.4, or Linux 2.6+, line referring to a disk
         return fields[3] if len(fields) == 15 else fields[2]
 
-    def output(self, displayer):
-        return super(self.__class__, self).output(displayer, before_string='PostgreSQL partitions:', after_string='\n')
+    def output(self, displayer, before_string=None, after_string=None):
+        return super(PartitionStatCollector, self).output(
+            displayer, before_string='PostgreSQL partitions:', after_string='\n')
 
 
 class DetachedDiskStatCollector(Process):
@@ -328,3 +332,35 @@ class DetachedDiskStatCollector(Process):
                 break
             parent_device = os.stat(pathname).st_dev
         return mount_point
+
+
+class DiskCollectorConsumer(object):
+    """ consumes information from the disk collector and provides it for the local
+        collector classes running in the same subprocess.
+    """
+    def __init__(self, q):
+        self.result = {}
+        self.cached_result = {}
+        self.q = q
+
+    def consume(self):
+        # if we haven't consumed the previous value
+        if len(self.result) != 0:
+            return
+        try:
+            self.result = self.q.get_nowait()
+            self.cached_result = self.result.copy()
+        except Empty:
+            # we are too fast, just do nothing.
+            pass
+        else:
+            self.q.task_done()
+
+    def fetch(self, work_directory):
+        data = None
+        if work_directory in self.result:
+            data = self.result[work_directory]
+            del self.result[work_directory]
+        elif work_directory in self.cached_result:
+            data = self.cached_result[work_directory]
+        return data

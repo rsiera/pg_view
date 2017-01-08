@@ -15,7 +15,7 @@ from pg_view.exceptions import NotConnectedError, NoPidConnectionError, Duplicat
 from pg_view.loggers import setup_loggers
 from pg_view.models.parsers import ProcWorker
 
-from pg_view.models.consumers import DiskCollectorConsumer
+from pg_view.collectors.partition_collector import DiskCollectorConsumer
 from pg_view.models.db_client import make_cluster_desc, DBClient
 from pg_view import loggers
 from pg_view import consts

@@ -275,7 +275,7 @@ class PgStatCollector(BaseStatCollector):
                 self.pgcon.close()
             self.pgcon = None
             self._do_refresh([])
-            return None
+            return []
 
         # fetch up-to-date list of subprocess PIDs
         pids = self.get_subprocesses_pid()
@@ -359,6 +359,14 @@ class PgStatCollector(BaseStatCollector):
         if psutil.LINUX and (is_active or not is_backend):
             proc_data['uss'] = self._get_memory_usage(pid)
         return proc_data
+
+    def _try_reconnect(self):
+        # if we've lost the connection, try to reconnect and re-initialize all connection invariants
+        self.pgcon, self.postmaster_pid = self.reconnect()
+        self.connection_pid = self.pgcon.get_backend_pid()
+        self.max_connections = self._get_max_connections()
+        self.dbver = dbversion_as_float(self.pgcon)
+        self.server_version = self.pgcon.get_parameter_status('server_version')
 
     def _try_reconnect(self):
         # if we've lost the connection, try to reconnect and re-initialize all connection invariants
@@ -500,5 +508,5 @@ class PgStatCollector(BaseStatCollector):
                             blocked_temp.extend(self.blocked_diffs[child_row['pid']])
                             del self.blocked_diffs[child_row['pid']]
 
-    def output(self, displayer):
-        return super(self.__class__, self).output(displayer, before_string='PostgreSQL processes:', after_string='\n')
+    def output(self, displayer, before_string=None, after_string=None):
+        return super(PgStatCollector, self).output(displayer, before_string='PostgreSQL processes:', after_string='\n')
