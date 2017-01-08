@@ -14,7 +14,7 @@ from pg_view.models.formatters import StatusFormatter
 from pg_view.models.outputs import COLALIGN
 from pg_view.sqls import SELECT_PG_IS_IN_RECOVERY, SHOW_MAX_CONNECTIONS, SELECT_PGSTAT_VERSION_LESS_THAN_92, \
     SELECT_PGSTAT_VERSION_LESS_THAN_96, SELECT_PGSTAT_NEVER_VERSION
-from pg_view.utils import PAGESIZE
+from pg_view.utils import PAGESIZE, get_process_or_none
 
 if sys.hexversion >= 0x03000000:
     long = int
@@ -228,7 +228,10 @@ class PgStatCollector(BaseStatCollector):
         return cls(cluster['pgcon'], cluster['reconnect'], cluster['pid'], cluster['name'], cluster['ver'], pid)
 
     def get_subprocesses_pid(self):
-        subprocesses = psutil.Process(self.postmaster_pid).children()
+        process = get_process_or_none(self.postmaster_pid)
+        if process is None:
+            return []
+        subprocesses = process.children()
         if not subprocesses:
             loggers.logger.info("Couldn't determine the pid of subprocesses for {0}".format(self.postmaster_pid))
             return []
@@ -300,7 +303,10 @@ class PgStatCollector(BaseStatCollector):
 
     def get_proc_data(self, pid):
         result = {}
-        process = psutil.Process(pid)
+        process = get_process_or_none(pid)
+        if process is None:
+            return result
+
         cpu_times = process.cpu_times()
         memory_info = process.memory_info()
 
@@ -331,7 +337,11 @@ class PgStatCollector(BaseStatCollector):
     def get_io_counters(self, process):
         if not hasattr(process, 'io_counters'):
             return {}
-        io_stats = process.io_counters()
+        try:
+            io_stats = process.io_counters()
+        except psutil.AccessDenied:
+            loggers.logger.warning('No permission to access process no. {}'.format(process.pid))
+            return {}
         return {
             'read_bytes': io_stats.read_bytes,
             'write_bytes': io_stats.write_bytes

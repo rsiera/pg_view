@@ -3,6 +3,8 @@ import re
 import resource
 import sys
 
+import psutil
+
 from pg_view import consts
 from pg_view import loggers
 from pg_view.exceptions import InvalidConnectionParamError
@@ -161,3 +163,15 @@ def time_field_to_seconds(val):
             num = 0
             accum_digits = []
     return result
+
+
+def get_process_or_none(pid):
+    try:
+        process = psutil.Process(pid)
+    except psutil.NoSuchProcess:
+        loggers.logger.warning('Process no. {} disappeared while processing'.format(pid))
+    except psutil.AccessDenied:
+        loggers.logger.warning('No permission to access process no. {}'.format(pid))
+    else:
+        return process
+    return None
