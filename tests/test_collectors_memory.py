@@ -49,7 +49,7 @@ class MemoryStatCollectorTest(TestCase):
     @unittest.skipUnless(psutil.LINUX, "Linux only")
     @mock.patch('pg_view.collectors.memory_collector.psutil._pslinux.open_binary')
     @mock.patch('pg_view.collectors.memory_collector.psutil.virtual_memory')
-    def test__read_memory_data_should_parse_data_from_proc_meminfo_when_linux(self, mocked_virtual_memory,
+    def test_read_memory_data_should_parse_data_from_proc_meminfo_when_linux(self, mocked_virtual_memory,
                                                                               mocked_open_binary):
         meminfo_ok_path = os.path.join(TEST_DIR, 'proc_files', 'meminfo_ok')
         linux_svmem = namedtuple('linux_svmem', 'total free buffers cached')
@@ -81,13 +81,13 @@ class MemoryStatCollectorTest(TestCase):
     def test__is_commit_should_return_true_when_both_exist(self):
         self.assertFalse(self.collector._is_commit({'CommitLimit': 10, 'Commited_AS': 20}))
 
-    def test__calculate_kb_left_until_limit_should_return_result(self):
+    def test_calculate_kb_left_until_limit_should_return_result(self):
         data = self.collector.calculate_kb_left_until_limit(
             'commit_left', {'CommitLimit': 30, 'Committed_AS': 20}, True)
         self.assertEqual(10, data)
 
     @mock.patch('pg_view.loggers.logger')
-    def test__calculate_kb_left_until_limit_should_log_warn_when_non_optional_and_not_commit(self, mocked_logger):
+    def test_calculate_kb_left_until_limit_should_log_warn_when_non_optional_and_not_commit(self, mocked_logger):
         data = self.collector.calculate_kb_left_until_limit('commit_left', {}, False)
         self.assertIsNone(data)
         mocked_logger.error.assert_called_with('Column commit_left is not optional, but input row has no value for it')

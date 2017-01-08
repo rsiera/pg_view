@@ -114,19 +114,19 @@ class PgStatCollectorTest(TestCase):
         self.assertEqual('role', collector._get_recovery_status())
         mocked_execute_fetchone_query.assert_called_with(SELECT_PG_IS_IN_RECOVERY)
 
-    def test_get_sql_by_pg_version_should_return_92_when_dbver_less_than_92(self):
+    def test_get_sql_pgstat_by_version_should_return_92_when_dbver_less_than_92(self):
         cluster = self.cluster.copy()
         cluster['ver'] = 9.1
         collector = PgStatCollector.from_cluster(cluster, 1049)
         self.assertEqual(SELECT_PGSTAT_VERSION_LESS_THAN_92, collector.get_sql_pgstat_by_version())
 
-    def test_get_sql_by_pg_version_should_return_less_than_96_when_dbver_95(self):
+    def test_get_sql_pgstat_by_version_should_return_less_than_96_when_dbver_95(self):
         cluster = self.cluster.copy()
         cluster['ver'] = 9.5
         collector = PgStatCollector.from_cluster(cluster, 1049)
         self.assertEqual(SELECT_PGSTAT_VERSION_LESS_THAN_96, collector.get_sql_pgstat_by_version())
 
-    def test_get_sql_by_pg_version_should_return_newer_when_bigger_than_96(self):
+    def test_get_sql_pgstat_by_version_should_return_newer_when_bigger_than_96(self):
         cluster = self.cluster.copy()
         cluster['ver'] = 9.7
         collector = PgStatCollector.from_cluster(cluster, 1049)
@@ -134,7 +134,7 @@ class PgStatCollectorTest(TestCase):
 
     @mock.patch('pg_view.utils.os')
     @mock.patch('pg_view.collectors.pg_collector.get_process_or_none')
-    def test__read_proc_should_return_empty_when_process_is_none(self, mocked_get_process, mocked_os):
+    def test_get_proc_data_should_return_empty_when_process_is_none(self, mocked_get_process, mocked_os):
         collector = PgStatCollector.from_cluster(self.cluster, 1049)
         mocked_os.sysconf.return_value.SC_PAGE_SIZE = 4096
 
@@ -144,7 +144,7 @@ class PgStatCollectorTest(TestCase):
 
     @mock.patch('pg_view.utils.os')
     @mock.patch('pg_view.collectors.pg_collector.get_process_or_none')
-    def test__read_proc_should_return_data_when_process_ok(self, mocked_get_process, mocked_os):
+    def test_get_proc_data_should_return_data_when_process_ok(self, mocked_get_process, mocked_os):
         collector = PgStatCollector.from_cluster(self.cluster, 1049)
         mocked_os.sysconf.return_value.SC_PAGE_SIZE = 4096
 
@@ -183,7 +183,7 @@ class PgStatCollectorTest(TestCase):
     @unittest.skipUnless(psutil.LINUX, 'Linux only')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_psinfo')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_memory_usage')
-    def test_get_additional_info_should_update_when_not_backend_and_action(self, mocked__get_memory_usage,
+    def test_get_additional_proc_info_should_update_when_not_backend_and_action(self, mocked__get_memory_usage,
                                                                            mocked__get_psinfo):
         collector = PgStatCollector.from_cluster(self.cluster, 1049)
         mocked__get_psinfo.return_value = ('vacuum', 'query')
@@ -194,7 +194,7 @@ class PgStatCollectorTest(TestCase):
     @unittest.skipUnless(psutil.LINUX, 'Linux only')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_psinfo')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_memory_usage')
-    def test_get_additional_info_should_update_when_not_backend_and_not_action(self, mocked__get_memory_usage,
+    def test_get_additional_proc_info_should_update_when_not_backend_and_not_action(self, mocked__get_memory_usage,
                                                                                mocked__get_psinfo):
         collector = PgStatCollector.from_cluster(self.cluster, 1049)
         mocked__get_psinfo.return_value = ('vacuum', None)
@@ -204,7 +204,7 @@ class PgStatCollectorTest(TestCase):
 
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_psinfo')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_memory_usage')
-    def test_get_additional_info_should_update_when_backend_and_not_active(self, mocked__get_memory_usage,
+    def test_get_additional_proc_info_should_update_when_backend_and_not_active(self, mocked__get_memory_usage,
                                                                            mocked__get_psinfo):
         collector = PgStatCollector.from_cluster(self.cluster, [1011])
         mocked__get_psinfo.return_value = ('vacuum', None)
@@ -215,8 +215,9 @@ class PgStatCollectorTest(TestCase):
     @unittest.skipUnless(psutil.LINUX, 'Linux only')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_psinfo')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_memory_usage')
-    def test_get_additional_info_should_update_when_backend_and_active_query_not_idle(self, mocked__get_memory_usage,
-                                                                                      mocked__get_psinfo):
+    def test_get_additional_proc_info_should_update_when_backend_and_active_query_not_idle(self,
+                                                                                           mocked__get_memory_usage,
+                                                                                           mocked__get_psinfo):
         collector = PgStatCollector.from_cluster(self.cluster, [1011])
         mocked__get_psinfo.return_value = ('vacuum', None)
         mocked__get_memory_usage.return_value = 10
@@ -226,8 +227,9 @@ class PgStatCollectorTest(TestCase):
     @unittest.skipUnless(psutil.LINUX, 'Linux only')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_psinfo')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_memory_usage')
-    def test_get_additional_info_should_update_when_backend_and_active_pid_in_track_pids(self, mocked__get_memory_usage,
-                                                                                         mocked__get_psinfo):
+    def test_get_additional_proc_info_should_update_when_backend_and_active_pid_in_track_pids(self,
+                                                                                              mocked__get_memory_usage,
+                                                                                              mocked__get_psinfo):
         collector = PgStatCollector.from_cluster(self.cluster, [1049])
         mocked__get_psinfo.return_value = ('vacuum', None)
         mocked__get_memory_usage.return_value = 10

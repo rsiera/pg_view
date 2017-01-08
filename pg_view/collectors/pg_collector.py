@@ -368,14 +368,6 @@ class PgStatCollector(BaseStatCollector):
         self.dbver = dbversion_as_float(self.pgcon)
         self.server_version = self.pgcon.get_parameter_status('server_version')
 
-    def _try_reconnect(self):
-        # if we've lost the connection, try to reconnect and re-initialize all connection invariants
-        self.pgcon, self.postmaster_pid = self.reconnect()
-        self.connection_pid = self.pgcon.get_backend_pid()
-        self.max_connections = self._get_max_connections()
-        self.dbver = dbversion_as_float(self.pgcon)
-        self.server_version = self.pgcon.get_parameter_status('server_version')
-
     def _get_memory_usage(self, pid):
         # compute process's own non-shared memory.
         # See http://www.depesz.com/2012/06/09/how-much-ram-is-postgresql-using/ for the explanation of how

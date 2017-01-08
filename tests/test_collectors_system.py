@@ -63,7 +63,7 @@ class SystemStatCollectorTest(TestCase):
         self.assertEqual({b'procs_blocked': 0, b'procs_running': 1}, refreshed_data)
 
     @mock.patch('pg_view.collectors.system_collector.psutil.cpu_times')
-    def test_read_cpu_data_should_transform_input_when_cpu_times_for_linux(self, mocked_cpu_times):
+    def test_read_cpu_times_should_transform_input_when_cpu_times_for_linux(self, mocked_cpu_times):
         linux_scputimes = namedtuple('scputimes', 'user nice system idle iowait irq softirq steal guest')
         mocked_cpu_times.return_value = linux_scputimes(
             user=848.31, nice=0.0, system=775.15, idle=105690.03, iowait=2.05, irq=0.01,
@@ -77,7 +77,7 @@ class SystemStatCollectorTest(TestCase):
         self.assertEqual(expected_data, refreshed_cpu)
 
     @mock.patch('pg_view.collectors.system_collector.psutil.cpu_times')
-    def test_read_cpu_data_should_transform_input_when_cpu_times_for_macos(self, mocked_cpu_times):
+    def test_read_cpu_times_should_transform_input_when_cpu_times_for_macos(self, mocked_cpu_times):
         macos_scputimes = namedtuple('scputimes', 'user system idle')
         mocked_cpu_times.return_value = macos_scputimes(
             user=49618.61, system=28178.55, idle=341331.57)
@@ -90,7 +90,7 @@ class SystemStatCollectorTest(TestCase):
 
     @mock.patch('pg_view.collectors.system_collector.psutil.cpu_stats')
     @mock.patch('pg_view.collectors.system_collector.psutil.LINUX', False)
-    def test_read_cpu_data_should_transform_input_when_cpu_stats_for_macos(self, mocked_cpu_times):
+    def test_read_cpu_stats_should_transform_input_when_cpu_stats_for_macos(self, mocked_cpu_times):
         macos_scpustats = namedtuple('scpustats', 'ctx_switches interrupts soft_interrupts syscalls')
         mocked_cpu_times.return_value = macos_scpustats(
             ctx_switches=12100, interrupts=888823, soft_interrupts=211467872, syscalls=326368)
@@ -102,7 +102,7 @@ class SystemStatCollectorTest(TestCase):
     @mock.patch('pg_view.collectors.system_collector.psutil.cpu_stats')
     @mock.patch('pg_view.collectors.system_collector.psutil.LINUX', True)
     @mock.patch('pg_view.collectors.system_collector.SystemStatCollector.get_missing_cpu_stat_from_file')
-    def test_read_cpu_data_should_transform_input_when_cpu_stats_for_linux(self, mocked_get_missing_cpu_stat_from_file,
+    def test_read_cpu_stats_should_transform_input_when_cpu_stats_for_linux(self, mocked_get_missing_cpu_stat_from_file,
                                                                            mocked_cpu_times):
         linux_scpu_stats = namedtuple('scpustats', 'ctx_switches interrupts soft_interrupts syscalls')
         mocked_get_missing_cpu_stat_from_file.return_value = {
