@@ -4,20 +4,17 @@ import sys
 import time
 from multiprocessing import Process
 
-from pg_view import loggers
-from pg_view.collectors.base_collector import BaseStatCollector
-from pg_view.consts import TICK_LENGTH, RD
-from pg_view.models.formatters import FnFormatter, StatusFormatter
+from pg_view.collectors.base_collector import StatCollector
+from pg_view import consts
+from pg_view.loggers import logger
 from pg_view.models.outputs import COLALIGN
+from pg_view.utils import BLOCK_SIZE
 
 if sys.hexversion >= 0x03000000:
     long = int
-    from queue import Empty
-else:
-    from Queue import Empty
 
 
-class PartitionStatCollector(BaseStatCollector):
+class PartitionStatCollector(StatCollector):
     """Collect statistics about PostgreSQL partitions """
 
     DISK_STAT_FILE = '/proc/diskstats'
@@ -32,25 +29,13 @@ class PartitionStatCollector(BaseStatCollector):
         self.dbver = dbversion
         self.queue_consumer = consumer
         self.work_directory = work_directory
-        self.status_formatter = StatusFormatter(self)
-        self.fn_formatter = FnFormatter(self)
-
-        self.df_list_transformation = [
-            {'out': 'dev', 'in': 0, 'fn': self._dereference_dev_name},
-            {'out': 'space_total', 'in': 1, 'fn': int},
-            {'out': 'space_left', 'in': 2, 'fn': int}
-        ]
-
-        self.io_list_transformation = [
-            {'out': 'sectors_read', 'in': 5, 'fn': int},
-            {'out': 'sectors_written', 'in': 9, 'fn': int},
-            {'out': 'await', 'in': 13, 'fn': int}
-        ]
-
-        self.du_list_transformation = [
-            {'out': 'path_size', 'in': 0, 'fn': int},
-            {'out': 'path', 'in': 1}
-        ]
+        self.df_list_transformation = [{'out': 'dev', 'in': 0, 'fn': self._dereference_dev_name},
+                                       {'out': 'space_total', 'in': 1, 'fn': int},
+                                       {'out': 'space_left', 'in': 2, 'fn': int}]
+        self.io_list_transformation = [{'out': 'sectors_read', 'in': 5, 'fn': int}, {'out': 'sectors_written', 'in': 9,
+                                                                                     'fn': int},
+                                       {'out': 'await', 'in': 13, 'fn': int}]
+        self.du_list_transformation = [{'out': 'path_size', 'in': 0, 'fn': int}, {'out': 'path', 'in': 1}]
 
         self.diff_generator_data = [
             {'out': 'type', 'diff': False},
@@ -73,8 +58,8 @@ class PartitionStatCollector(BaseStatCollector):
                 'out': 'fill',
                 'in': 'path_fill_rate',
                 'units': 'MB/s',
-                'fn': self.unit_converter.kb_to_mbytes,
-                'round': RD,
+                'fn': self.kb_to_mbytes,
+                'round': StatCollector.RD,
                 'pos': 2,
                 'minw': 6,
             },
@@ -83,8 +68,8 @@ class PartitionStatCollector(BaseStatCollector):
                 'in': 'time_until_full',
                 'pos': 3,
                 'noautohide': True,
-                'status_fn': self.status_formatter.time_field_status,
-                'fn': self.fn_formatter.time_pretty_print,
+                'status_fn': self.time_field_status,
+                'fn': StatCollector.time_pretty_print,
                 'warning': 10800,
                 'critical': 3600,
                 'hide_if_ok': True,
@@ -93,7 +78,7 @@ class PartitionStatCollector(BaseStatCollector):
             {
                 'out': 'total',
                 'in': 'space_total',
-                'fn': self.fn_formatter.kb_pretty_print,
+                'fn': self.kb_pretty_print,
                 'pos': 4,
                 'minw': 5,
                 'align': COLALIGN.ca_right,
@@ -101,7 +86,7 @@ class PartitionStatCollector(BaseStatCollector):
             {
                 'out': 'left',
                 'in': 'space_left',
-                'fn': self.fn_formatter.kb_pretty_print,
+                'fn': self.kb_pretty_print,
                 'pos': 5,
                 'noautohide': False,
                 'minw': 5,
@@ -110,8 +95,8 @@ class PartitionStatCollector(BaseStatCollector):
             {
                 'out': 'read',
                 'units': 'MB/s',
-                'fn': self.unit_converter.sectors_to_mbytes,
-                'round': RD,
+                'fn': self.sectors_to_mbytes,
+                'round': StatCollector.RD,
                 'pos': 6,
                 'noautohide': True,
                 'minw': 6,
@@ -119,8 +104,8 @@ class PartitionStatCollector(BaseStatCollector):
             {
                 'out': 'write',
                 'units': 'MB/s',
-                'fn': self.unit_converter.sectors_to_mbytes,
-                'round': RD,
+                'fn': self.sectors_to_mbytes,
+                'round': StatCollector.RD,
                 'pos': 7,
                 'noautohide': True,
                 'minw': 6,
@@ -128,31 +113,28 @@ class PartitionStatCollector(BaseStatCollector):
             {
                 'out': 'await',
                 'units': 'ms',
-                'round': RD,
+                'round': StatCollector.RD,
                 'pos': 8,
                 'minw': 8,
             },
             {
                 'out': 'path_size',
-                'fn': self.fn_formatter.kb_pretty_print,
+                'fn': self.kb_pretty_print,
                 'pos': 9,
                 'noautohide': True,
                 'align': COLALIGN.ca_right,
             },
             {'out': 'path', 'pos': 10},
         ]
-        self.ncurses_custom_fields = {'header': True, 'prefix': None}
+        self.ncurses_custom_fields = {'header': True}
+        self.ncurses_custom_fields['prefix'] = None
         self.postinit()
-
-    @classmethod
-    def from_cluster(cls, cluster, consumer):
-        return cls(['name'], cluster['ver'], cluster['wd'], consumer)
 
     def ident(self):
         return '{0} ({1}/{2})'.format(super(PartitionStatCollector, self).ident(), self.dbname, self.dbver)
 
     def _dereference_dev_name(self, devname):
-        return devname.replace('/dev/', '') if devname else None
+        return (devname.replace('/dev/', '') if devname else None)
 
     def refresh(self):
         result = {}
@@ -164,12 +146,13 @@ class PartitionStatCollector(BaseStatCollector):
         if queue_data:
             (du_out, df_out) = queue_data
 
-        for pname in self.DATA_NAME, self.XLOG_NAME:
+        for pname in PartitionStatCollector.DATA_NAME, PartitionStatCollector.XLOG_NAME:
             result[pname] = self._transform_input(df_out[pname], self.df_list_transformation)
 
-        io_out = self.get_io_data([result[self.DATA_NAME]['dev'], result[self.XLOG_NAME]['dev']])
+        io_out = self.get_io_data([result[PartitionStatCollector.DATA_NAME]['dev'],
+                                   result[PartitionStatCollector.XLOG_NAME]['dev']])
 
-        for pname in self.DATA_NAME, self.XLOG_NAME:
+        for pname in PartitionStatCollector.DATA_NAME, PartitionStatCollector.XLOG_NAME:
             if result[pname]['dev'] in io_out:
                 result[pname].update(self._transform_input(io_out[result[pname]['dev']], self.io_list_transformation))
             if pname in du_out:
@@ -177,9 +160,7 @@ class PartitionStatCollector(BaseStatCollector):
             # set the type manually
             result[pname]['type'] = pname
 
-        new_rows = [result[self.DATA_NAME], result[self.XLOG_NAME]]
-        self._do_refresh(new_rows)
-        return new_rows
+        self._do_refresh([result[PartitionStatCollector.DATA_NAME], result[PartitionStatCollector.XLOG_NAME]])
 
     def calculate_time_until_full(self, colname, prev, cur):
         # both should be expressed in common units, guaranteed by BLOCK_SIZE
@@ -207,20 +188,18 @@ class PartitionStatCollector(BaseStatCollector):
                 if found == total:
                     break
         except:
-            loggers.logger.error('Unable to read {0}'.format(PartitionStatCollector.DISK_STAT_FILE))
+            logger.error('Unable to read {0}'.format(PartitionStatCollector.DISK_STAT_FILE))
             result = {}
         finally:
             fp and fp.close()
         return result
 
-    def output(self, displayer, before_string=None, after_string=None):
-        return super(PartitionStatCollector, self).output(
-            displayer, before_string='PostgreSQL partitions:', after_string='\n')
+    def output(self, method):
+        return super(self.__class__, self).output(method, before_string='PostgreSQL partitions:', after_string='\n')
 
 
 class DetachedDiskStatCollector(Process):
     """ This class runs in a separate process and runs du and df """
-    BLOCK_SIZE = 1024
 
     def __init__(self, q, work_directories):
         super(DetachedDiskStatCollector, self).__init__()
@@ -235,30 +214,32 @@ class DetachedDiskStatCollector(Process):
             self.q.join()
             result = {}
             self.df_cache = {}
-            for work_directory in self.work_directories:
-                du_data = self.get_du_data(work_directory)
-                df_data = self.get_df_data(work_directory)
-                result[work_directory] = [du_data, df_data]
+            for wd in self.work_directories:
+                du_data = self.get_du_data(wd)
+                df_data = self.get_df_data(wd)
+                result[wd] = [du_data, df_data]
             self.q.put(result)
-            time.sleep(TICK_LENGTH)
+            time.sleep(consts.TICK_LENGTH)
 
-    def get_du_data(self, work_directory):
+    def get_du_data(self, wd):
+        data_size = 0
+        xlog_size = 0
+
         result = {'data': [], 'xlog': []}
         try:
-            data_size = self.run_du(work_directory)
-            xlog_size = self.run_du(work_directory + '/pg_xlog/')
+            data_size = self.run_du(wd, BLOCK_SIZE)
+            xlog_size = self.run_du(wd + '/pg_xlog/', BLOCK_SIZE)
         except Exception as e:
-            loggers.logger.error('Unable to read free space information for the pg_xlog and data '
-                                 'directories for the directory {0}: {1}'.format(work_directory, e))
+            logger.error('Unable to read free space information for the pg_xlog and data directories for the directory\
+             {0}: {1}'.format(wd, e))
         else:
             # XXX: why do we pass the block size there?
-            result['data'] = str(data_size), work_directory
-            result['xlog'] = str(xlog_size), work_directory + '/pg_xlog'
+            result['data'] = str(data_size), wd
+            result['xlog'] = str(xlog_size), wd + '/pg_xlog'
         return result
 
-    def run_du(self, pathname, exclude=None):
-        if exclude is None:
-            exclude = ['lost+found']
+    @staticmethod
+    def run_du(pathname, block_size=BLOCK_SIZE, exclude=['lost+found']):
         size = 0
         folders = [pathname]
         root_dev = os.lstat(pathname).st_dev
@@ -282,38 +263,40 @@ class DetachedDiskStatCollector(Process):
                     size += st.st_size
                 if mode == 0x8000:  # S_IFREG
                     size += st.st_size
-        return long(size / self.BLOCK_SIZE)
+        return long(size / block_size)
 
     def get_df_data(self, work_directory):
         """ Retrive raw data from df (transformations are performed via df_list_transformation) """
+
         result = {'data': [], 'xlog': []}
         # obtain the device names
         data_dev = self.get_mounted_device(self.get_mount_point(work_directory))
         xlog_dev = self.get_mounted_device(self.get_mount_point(work_directory + '/pg_xlog/'))
+        if data_dev not in self.df_cache:
+            data_vfs = os.statvfs(work_directory)
+            self.df_cache[data_dev] = data_vfs
+        else:
+            data_vfs = self.df_cache[data_dev]
 
-        data_vfs = self._get_or_update_df_cache(work_directory, data_dev)
-        xlog_vfs = self._get_or_update_df_cache(work_directory + '/pg_xlog/', xlog_dev)
+        if xlog_dev not in self.df_cache:
+            xlog_vfs = os.statvfs(work_directory + '/pg_xlog/')
+            self.df_cache[xlog_dev] = xlog_vfs
+        else:
+            xlog_vfs = self.df_cache[xlog_dev]
 
-        data_vfs_blocks = data_vfs.f_bsize / self.BLOCK_SIZE
-        result['data'] = (data_dev, data_vfs.f_blocks * data_vfs_blocks, data_vfs.f_bavail * data_vfs_blocks)
+        result['data'] = (data_dev, data_vfs.f_blocks * (data_vfs.f_bsize / BLOCK_SIZE),
+                          data_vfs.f_bavail * (data_vfs.f_bsize / BLOCK_SIZE))
         if data_dev != xlog_dev:
-            xlog_vfs_blocks = (xlog_vfs.f_bsize / self.BLOCK_SIZE)
-            result['xlog'] = (xlog_dev, xlog_vfs.f_blocks * xlog_vfs_blocks, xlog_vfs.f_bavail * xlog_vfs_blocks)
+            result['xlog'] = (xlog_dev, xlog_vfs.f_blocks * (xlog_vfs.f_bsize / BLOCK_SIZE),
+                              xlog_vfs.f_bavail * (xlog_vfs.f_bsize / BLOCK_SIZE))
         else:
             result['xlog'] = result['data']
         return result
 
-    def _get_or_update_df_cache(self, work_directory, dev):
-        if dev not in self.df_cache:
-            vfs = os.statvfs(work_directory)
-            self.df_cache[dev] = vfs
-        else:
-            vfs = self.df_cache[dev]
-        return vfs
-
     @staticmethod
     def get_mounted_device(pathname):
         """Get the device mounted at pathname"""
+
         # uses "/proc/mounts"
         raw_dev_name = None
         dev_name = None
@@ -350,6 +333,7 @@ class DetachedDiskStatCollector(Process):
     @staticmethod
     def get_mount_point(pathname):
         """Get the mounlst point of the filesystem containing pathname"""
+
         pathname = os.path.normcase(os.path.realpath(pathname))
         parent_device = path_device = os.stat(pathname).st_dev
         while parent_device == path_device:
@@ -359,35 +343,3 @@ class DetachedDiskStatCollector(Process):
                 break
             parent_device = os.stat(pathname).st_dev
         return mount_point
-
-
-class DiskCollectorConsumer(object):
-    """ consumes information from the disk collector and provides it for the local
-        collector classes running in the same subprocess.
-    """
-    def __init__(self, q):
-        self.result = {}
-        self.cached_result = {}
-        self.q = q
-
-    def consume(self):
-        # if we haven't consumed the previous value
-        if len(self.result) != 0:
-            return
-        try:
-            self.result = self.q.get_nowait()
-            self.cached_result = self.result.copy()
-        except Empty:
-            # we are too fast, just do nothing.
-            pass
-        else:
-            self.q.task_done()
-
-    def fetch(self, work_directory):
-        data = None
-        if work_directory in self.result:
-            data = self.result[work_directory]
-            del self.result[work_directory]
-        elif work_directory in self.cached_result:
-            data = self.cached_result[work_directory]
-        return data

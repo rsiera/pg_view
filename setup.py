@@ -19,7 +19,7 @@ def read_module(path):
     return data
 
 
-meta = read_module(os.path.join('pg_view', 'models', 'outputs.py'))
+meta = read_module(os.path.join('pg_view', 'meta.py'))
 NAME = 'pg-view'
 MAIN_MODULE = 'pg_view'
 VERSION = meta['__version__']
@@ -47,16 +47,13 @@ CLASSIFIERS = [
     'Topic :: Database'
 ]
 
-CONSOLE_SCRIPTS = ['pg_view = pg_view.view:main']
+CONSOLE_SCRIPTS = ['pg_view = pg_view:main']
 
 
 class PyTest(TestCommand):
-    user_options = [
-        ('cov=', None, 'Run coverage'),
-        ('cov-xml=', None, 'Generate junit xml report'),
-        ('cov-html=', None, 'Generate junit html report'),
-        ('junitxml=', None, 'Generate xml of test results')
-    ]
+
+    user_options = [('cov=', None, 'Run coverage'), ('cov-xml=', None, 'Generate junit xml report'), ('cov-html=',
+                    None, 'Generate junit html report'), ('junitxml=', None, 'Generate xml of test results')]
 
     def initialize_options(self):
         TestCommand.initialize_options(self)
@@ -93,7 +90,10 @@ def get_install_requirements(path):
 
 
 def read(fname):
-    return open(os.path.join(__location__, fname)).read()
+    if sys.version_info[0] < 3:
+        return open(os.path.join(__location__, fname)).read()
+    else:
+        return open(os.path.join(__location__, fname), encoding='utf-8').read()
 
 
 def setup_package():
@@ -122,7 +122,7 @@ def setup_package():
         install_requires=install_reqs,
         setup_requires=['flake8'],
         cmdclass=cmdclass,
-        tests_require=['pytest-cov', 'pytest', 'mock', 'freezegun'],
+        tests_require=['pytest-cov', 'pytest'],
         command_options=command_options,
         entry_points={'console_scripts': CONSOLE_SCRIPTS},
     )
