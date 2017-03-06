@@ -30,10 +30,10 @@ from pg_view.utils import get_valid_output_methods, OUTPUT_METHOD, output_method
 try:
     import psycopg2
     import psycopg2.extras
-
-    psycopg2_available = True
 except ImportError:
-    psycopg2_available = False
+    print('Unable to import psycopg2 module, please, install it (python-psycopg2). Can not continue')
+    sys.exit(254)
+
 try:
     import curses
 
@@ -207,8 +207,8 @@ def main():
             try:
                 cluster = db_client.establish_user_defined_connection(instance, clusters)
             except (NotConnectedError, NoPidConnectionError):
-                msg = 'failed to acquire details about the database cluster {0}, the server will be skipped'
-                loggers.logger.error(msg.format(instance))
+                logger.error('failed to acquire details about the database cluster {0}, the server '
+                             'will be skipped'.format(instance))
             except DuplicatedConnectionError:
                 pass
             else:
@@ -221,7 +221,7 @@ def main():
         try:
             cluster = db_client.establish_user_defined_connection(instance, clusters)
         except (NotConnectedError, NoPidConnectionError):
-            loggers.logger.error("unable to continue with cluster {0}".format(instance))
+            logger.error("unable to continue with cluster {0}".format(instance))
         except DuplicatedConnectionError:
             pass
         else:
@@ -261,9 +261,9 @@ def main():
     groups = {}
     try:
         if not clusters:
-            loggers.logger.error('No suitable PostgreSQL instances detected, exiting...')
-            loggers.logger.error('hint: use -v for details, or specify connection parameters '
-                                 'manually in the configuration file (-c)')
+            logger.error('No suitable PostgreSQL instances detected, exiting...')
+            logger.error('hint: use -v for details, or specify connection parameters '
+                         'manually in the configuration file (-c)')
             sys.exit(1)
 
         # initialize the disks stat collector process and create an exchange queue
