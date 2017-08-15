@@ -48,6 +48,9 @@ def parse_args():
     parser.add_option('-H', '--help', help='show_help', action='help')
     parser.add_option('-v', '--verbose', help='verbose mode', action='store_true', dest='verbose')
     parser.add_option('-i', '--instance', help='name of the instance to monitor', action='store', dest='instance')
+    parser.add_option('-s', '--use-service',
+                      help='query the service file for the instance name provided',
+                      action='store_true', dest='use_service')
     parser.add_option('-t', '--tick', help='tick length (in seconds)',
                       action='store', dest='tick', type='int', default=1)
     parser.add_option('-o', '--output-method', help='send output to the following source', action='store',
@@ -114,7 +117,6 @@ def poll_keys(screen, output):
 def do_loop(screen, groups, output_method, collectors, consumer):
     """ Display output (or pass it through to ncurses) """
 
-    output = None
     if output_method == OUTPUT_METHOD.curses:
         if screen is None:
             logger.error('No parent screen is passed to the curses application')
@@ -131,17 +133,15 @@ def do_loop(screen, groups, output_method, collectors, consumer):
         # process input:
         consumer.consume()
         for st in collectors:
-            if output_method == OUTPUT_METHOD.curses:
-                if not poll_keys(screen, output):
-                    # bail out immediately
-                    return
+            if output_method == OUTPUT_METHOD.curses and not poll_keys(screen, output):
+                # bail out immediately
+                return
             st.set_units_display(flags.display_units)
             st.set_ignore_autohide(not flags.autohide_fields)
             st.set_notrim(flags.notrim)
             process_single_collector(st)
-            if output_method == OUTPUT_METHOD.curses:
-                if not poll_keys(screen, output):
-                    return
+            if output_method == OUTPUT_METHOD.curses and not poll_keys(screen, output):
+                return
 
         if output_method == OUTPUT_METHOD.curses:
             process_groups(groups)
@@ -182,20 +182,19 @@ def main():
 
     if output_method == OUTPUT_METHOD.curses and not curses_available:
         print('Curses output is selected, but curses are unavailable, falling back to console output')
-        output_method == OUTPUT_METHOD.console
+        output_method = OUTPUT_METHOD.console
 
     # set basic logging
     setup_logger(options)
 
-    user_dbname = options.instance
-    user_dbver = options.version
     clusters = []
 
-    # now try to read the configuration file
-    config = (read_configuration(options.config_file) if options.config_file else None)
+    config = read_configuration(options.config_file) if options.config_file else None
+    dbversion = None
+    # configuration file takes priority over the rest of database connection information sources.
     if config:
         for instance in config:
-            if user_dbname and instance != user_dbname:
+            if options.instance and instance != options.instance:
                 continue
             # pass already aquired connections to make sure we only list unique clusters.
             host = config[instance].get('host')
@@ -207,28 +206,31 @@ def main():
                 logger.error('failed to acquire details about ' +
                              'the database cluster {0}, the server will be skipped'.format(instance))
     elif options.host:
-        port = options.port or "5432"
-        # try to connet to the database specified by command-line options
+        # connect to the database using the connection string supplied from command-line
         conn = build_connection(options.host, options.port, options.username, options.dbname)
         instance = options.instance or "default"
         if not establish_user_defined_connection(instance, conn, clusters):
             logger.error("unable to continue with cluster {0}".format(instance))
+    elif options.use_service and options.instance:
+        # connect to the database using the service name
+        if not establish_user_defined_connection(options.instance, {'service': options.instance}, clusters):
+            logger.error("unable to continue with cluster {0}".format(options.instance))
     else:
         # do autodetection
         postmasters = get_postmasters_directories()
 
         # get all PostgreSQL instances
         for result_work_dir, data in postmasters.items():
-            (ppid, dbver, dbname) = data
+            (ppid, dbversion, dbname) = data
             # if user requested a specific database name and version - don't try to connect to others
-            if user_dbname:
-                if dbname != user_dbname or not result_work_dir or not ppid:
+            if options.instance:
+                if dbname != options.instance or not result_work_dir or not ppid:
                     continue
-                if user_dbver is not None and dbver != user_dbver:
+                if options.version is not None and dbversion != options.version:
                     continue
             try:
                 conndata = detect_db_connection_arguments(
-                    result_work_dir, ppid, dbver, options.username, options.dbname)
+                    result_work_dir, ppid, dbversion, options.username, options.dbname)
                 if conndata is None:
                     continue
                 host = conndata['host']
@@ -239,7 +241,7 @@ def main():
                 logger.error('PostgreSQL exception {0}'.format(e))
                 pgcon = None
             if pgcon:
-                desc = make_cluster_desc(name=dbname, version=dbver, workdir=result_work_dir,
+                desc = make_cluster_desc(name=dbname, version=dbversion, workdir=result_work_dir,
                                          pid=ppid, pgcon=pgcon, conn=conn)
                 clusters.append(desc)
     collectors = []
@@ -254,7 +256,9 @@ def main():
         # initialize the disks stat collector process and create an exchange queue
         q = JoinableQueue(1)
         work_directories = [cl['wd'] for cl in clusters if 'wd' in cl]
-        collector = DetachedDiskStatCollector(q, work_directories)
+        dbversion = dbversion or clusters[0]['ver']
+
+        collector = DetachedDiskStatCollector(q, work_directories, dbversion)
         collector.start()
         consumer = DiskCollectorConsumer(q)
 
@@ -286,7 +290,7 @@ def main():
 
 
 def setup_logger(options):
-    logger.setLevel((logging.INFO if options.verbose else logging.ERROR))
+    logger.setLevel(logging.INFO if options.verbose else logging.ERROR)
     if options.log_file:
         LOG_FILE_NAME = options.log_file
         # truncate the former logs
