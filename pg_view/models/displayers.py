@@ -40,7 +40,8 @@ class BaseDisplayer(object):
             attname += ' ' + col['units']
         return attname
 
-    def _produce_output_value(self, row, col):
+    @staticmethod
+    def _produce_output_value(row, col):
         # get the input value
         if 'in' in col:
             val = row.get(col['in'])
@@ -291,7 +292,8 @@ class CursesDisplayer(BaseStreamDisplayer):
     def _output_row_for_curses(self, row, typ='v'):
         return self._output_row_generic(row, typ)
 
-    def _calculate_column_types(self, rows):
+    @staticmethod
+    def _calculate_column_types(rows):
         result = {}
         if len(rows) > 0:
             colnames = rows[0].keys()
@@ -317,7 +319,8 @@ class CursesDisplayer(BaseStreamDisplayer):
             statuses.append(self._calculate_output_status(row, col, row[num]))
         return statuses
 
-    def _calculate_output_status(self, row, col, val):
+    @staticmethod
+    def _calculate_output_status(row, col, val):
         """ Examine the current status indicators and produce the status
             value for the specific column of the given row
         """

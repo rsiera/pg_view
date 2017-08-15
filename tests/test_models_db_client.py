@@ -5,8 +5,8 @@ import mock
 import psycopg2
 
 from pg_view.exceptions import NotConnectedError, NoPidConnectionError, DuplicatedConnectionError
-from pg_view.models.db_client import read_postmaster_pid, make_cluster_desc, DBConnectionBuilder, \
-    DBConnectionFinder, DBClient
+from pg_view.models.db_client import read_postmaster_pid, make_cluster_desc, DBConnectionFinder, DBClient, \
+    prepare_connection_params
 
 
 class DbClientUtilsTest(TestCase):
@@ -47,15 +47,13 @@ class DbClientUtilsTest(TestCase):
         self.assertIn('reconnect', cluster_desc)
 
     def test_build_connection_should_create_full_connection(self):
-        connection = DBConnectionBuilder('host', '5432', 'user', 'database')
-        conn = connection.build_connection()
+        connection = prepare_connection_params('host', '5432', 'user', 'database')
         self.assertEqual(
-            {'host': 'host', 'port': '5432', 'user': 'user', 'database': 'database'}, conn)
+            {'host': 'host', 'port': '5432', 'user': 'user', 'database': 'database'}, connection)
 
     def test_build_connection_should_return_only_existing_parameters(self):
-        connection = DBConnectionBuilder('host', '5432')
-        conn = connection.build_connection()
-        self.assertEqual({'host': 'host', 'port': '5432'}, conn)
+        connection = prepare_connection_params('host', '5432')
+        self.assertEqual({'host': 'host', 'port': '5432'}, connection)
 
 
 class DBConnectionFinderTest(TestCase):
@@ -136,7 +134,7 @@ class DBConnectionFinderTest(TestCase):
     def test_can_connect_with_connection_arguments_should_return_false_when_no_connection(self, mocked_psycopg2_connect,
                                                                                           mocked_logger):
         finder = DBConnectionFinder('workdir', 1049, '9.3', 'username', 'atlas')
-        connection_builder = DBConnectionBuilder(host='127.0.0.1', port=5431)
+        connection_builder = prepare_connection_params(host='127.0.0.1', port=5431)
         can_connect = finder.can_connect_with_connection_arguments(connection_builder)
         self.assertFalse(can_connect)
         mocked_psycopg2_connect.assert_called_once_with(host='127.0.0.1', port=5431)
@@ -144,7 +142,7 @@ class DBConnectionFinderTest(TestCase):
     @mock.patch('pg_view.models.db_client.psycopg2.connect')
     def test_can_connect_with_connection_arguments_should_return_true_when_connection_ok(self, mocked_psycopg2_connect):
         finder = DBConnectionFinder('workdir', 1049, '9.3', 'username', 'atlas')
-        connection_builder = DBConnectionBuilder(host='127.0.0.1', port=5431)
+        connection_builder = prepare_connection_params(host='127.0.0.1', port=5431)
         can_connect = finder.can_connect_with_connection_arguments(connection_builder)
         self.assertTrue(can_connect)
         mocked_psycopg2_connect.assert_called_once_with(host='127.0.0.1', port=5431)
@@ -178,7 +176,7 @@ class DBClientTest(TestCase):
         config = {'host': 'localhost', 'port': '5432', 'user': 'user', 'database': 'db'}
         client = DBClient.from_config(config)
         self.assertIsInstance(client, DBClient)
-        self.assertEqual(config, client.connection_builder.build_connection())
+        self.assertEqual(config, client.connection_params)
 
     def test_from_options_should_init_class_properly(self):
         options = mock.Mock(host='localhost', port='5432', username='user', dbname='db')
@@ -186,7 +184,7 @@ class DBClientTest(TestCase):
         self.assertIsInstance(client, DBClient)
         self.assertEqual(
             {'host': 'localhost', 'port': '5432', 'user': 'user', 'database': 'db'},
-            client.connection_builder.build_connection()
+            client.connection_params
         )
 
     @mock.patch('pg_view.models.db_client.DBConnectionFinder')
@@ -206,7 +204,7 @@ class DBClientTest(TestCase):
         self.assertIsInstance(client, DBClient)
         self.assertEqual(
             {'host': 'localhost', 'port': '5432', 'user': 'username', 'database': 'db'},
-            client.connection_builder.build_connection()
+            client.connection_params
         )
 
     @mock.patch('pg_view.models.db_client.logger')
@@ -218,8 +216,7 @@ class DBClientTest(TestCase):
         with self.assertRaises(NotConnectedError):
             client.establish_user_defined_connection('instance', [])
 
-        expected_msg = "failed to establish connection to instance via {0}".format(
-            client.connection_builder.build_connection())
+        expected_msg = "failed to establish connection to instance via {0}".format(client.connection_params)
         mocked_logger.error.assert_has_calls([mock.call(expected_msg), mock.call('PostgreSQL exception: ')])
 
     @mock.patch('pg_view.models.db_client.logger')
@@ -237,8 +234,7 @@ class DBClientTest(TestCase):
         with self.assertRaises(NoPidConnectionError):
             client.establish_user_defined_connection('default', [])
 
-        expected_msg = "failed to read pid of the postmaster on {0}".format(
-            client.connection_builder.build_connection())
+        expected_msg = "failed to read pid of the postmaster on {0}".format(client.connection_params)
         mocked_logger.error.assert_called_once_with(expected_msg)
 
     @mock.patch('pg_view.models.db_client.logger')

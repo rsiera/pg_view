@@ -219,6 +219,7 @@ def main():
     elif options.host:
         # connect to the database using the connection string supplied from command-line
         db_client = DBClient.from_options(options)
+        instance = options.instance or "default"
         try:
             cluster = db_client.establish_user_defined_connection(instance, clusters)
         except (NotConnectedError, NoPidConnectionError):
@@ -228,8 +229,9 @@ def main():
         else:
             clusters.append(cluster)
     elif options.use_service and options.instance:
+        db_client = DBClient({'service': options.instance})
         # connect to the database using the service name
-        if not establish_user_defined_connection(options.instance, {'service': options.instance}, clusters):
+        if not db_client.establish_user_defined_connection(options.instance, clusters):
             logger.error("unable to continue with cluster {0}".format(options.instance))
     else:
         # do autodetection
@@ -250,20 +252,18 @@ def main():
             db_client = DBClient.from_postmasters(result_work_dir, ppid, dbversion, options)
             if db_client is None:
                 continue
-            conn = db_client.connection_builder.build_connection()
             try:
-                pgcon = psycopg2.connect(**conn)
+                pgcon = psycopg2.connect(**db_client.connection_params)
             except Exception as e:
                 logger.error('PostgreSQL exception {0}'.format(e))
-                pgcon = None
-            if pgcon:
+            else:
                 desc = make_cluster_desc(
                     name=dbname,
                     version=dbversion,
                     workdir=result_work_dir,
                     pid=ppid,
                     pgcon=pgcon,
-                    conn=conn
+                    conn=db_client.connection_params
                 )
                 clusters.append(desc)
 

@@ -83,7 +83,8 @@ class HostStatCollector(BaseStatCollector):
     def _read_load_average(self):
         return self._transform_list(os.getloadavg())
 
-    def _concat_load_avg(self, colname, row, optional):
+    @staticmethod
+    def _concat_load_avg(colname, row, optional):
         """ concat all load averages into a single string """
         return ' '.join(str(x) for x in row[:3]) if len(row) >= 3 else ''
 

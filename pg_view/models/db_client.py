@@ -41,24 +41,17 @@ def make_cluster_desc(name, version, workdir, pid, pgcon, conn):
     }
 
 
-class DBConnectionBuilder(object):
-    def __init__(self, host, port, user='', database=''):
-        self.host = host
-        self.port = port
-        self.user = user
-        self.database = database
-
-    def build_connection(self):
-        result = {}
-        if self.host:
-            result['host'] = self.host
-        if self.port:
-            result['port'] = self.port
-        if self.user:
-            result['user'] = self.user
-        if self.database:
-            result['database'] = self.database
-        return result
+def prepare_connection_params(host, port, user='', database=''):
+    result = {}
+    if host:
+        result['host'] = host
+    if port:
+        result['port'] = port
+    if user:
+        result['user'] = user
+    if database:
+        result['database'] = database
+    return result
 
 
 class DBConnectionFinder(object):
@@ -100,17 +93,16 @@ class DBConnectionFinder(object):
             if result:
                 break
             for arg in conn_args.get(conn_type, []):
-                connection_candidate = DBConnectionBuilder(*arg, user=self.username, database=self.dbname)
+                connection_candidate = prepare_connection_params(*arg, user=self.username, database=self.dbname)
                 if self.can_connect_with_connection_arguments(connection_candidate):
                     (result['host'], result['port']) = arg
                     break
         return result
 
-    def can_connect_with_connection_arguments(self, connection):
+    def can_connect_with_connection_arguments(self, connection_params):
         """ check that we can connect given the specified arguments """
-        conn = connection.build_connection()
         try:
-            test_conn = psycopg2.connect(**conn)
+            test_conn = psycopg2.connect(**connection_params)
             test_conn.close()
         except psycopg2.OperationalError as e:
             logger.error(e)
@@ -130,18 +122,17 @@ class DBConnectionFinder(object):
 class DBClient(object):
     SHOW_COMMAND = 'SHOW DATA_DIRECTORY'
 
-    def __init__(self, connection_builder):
-        self.connection_builder = connection_builder
+    def __init__(self, connection_params):
+        self.connection_params = connection_params
 
     def establish_user_defined_connection(self, instance, clusters):
         """ connect the database and get all necessary options like pid and work_directory
             we use port, host and socket_directory, prefering socket over TCP connections
         """
-        conn_params = self.connection_builder.build_connection()
         try:
-            pgcon = psycopg2.connect(**conn_params)
+            pgcon = psycopg2.connect(**self.connection_params)
         except Exception as e:
-            logger.error('failed to establish connection to {0} via {1}'.format(instance, conn_params))
+            logger.error('failed to establish connection to {0} via {1}'.format(instance, self.connection_params))
             logger.error('PostgreSQL exception: {0}'.format(e))
             raise NotConnectedError
 
@@ -152,7 +143,7 @@ class DBClient(object):
         pid = read_postmaster_pid(work_directory, instance)
 
         if pid is None:
-            logger.error('failed to read pid of the postmaster on {0}'.format(conn_params))
+            logger.error('failed to read pid of the postmaster on {0}'.format(self.connection_params))
             raise NoPidConnectionError
 
         # check that we don't have the same pid already in the accumulated results.
@@ -169,7 +160,7 @@ class DBClient(object):
 
         # now we have all components to create a cluster descriptor
         return make_cluster_desc(
-            name=instance, version=dbver, workdir=work_directory, pid=pid, pgcon=pgcon, conn=conn_params)
+            name=instance, version=dbver, workdir=work_directory, pid=pid, pgcon=pgcon, conn=self.connection_params)
 
     def get_duplicated_instance(self, clusters, pid):
         return [opt['name'] for opt in clusters if 'pid' in opt and opt.get('pid', 0) == pid][0]
@@ -184,18 +175,18 @@ class DBClient(object):
 
     @classmethod
     def from_config(cls, config):
-        connection_builder = DBConnectionBuilder(
+        connection_params = prepare_connection_params(
             host=config.get('host'),
             port=config.get('port'),
             user=config.get('user'),
             database=config.get('database'),
         )
-        return cls(connection_builder)
+        return cls(connection_params)
 
     @classmethod
     def from_options(cls, options):
-        connection_builder = DBConnectionBuilder(options.host, options.port, options.username, options.dbname)
-        return cls(connection_builder)
+        connection_params = prepare_connection_params(options.host, options.port, options.username, options.dbname)
+        return cls(connection_params)
 
     @classmethod
     def from_postmasters(cls, work_directory, ppid, dbver, options):
@@ -203,6 +194,6 @@ class DBClient(object):
         connection_data = db_finder.detect_db_connection_arguments()
         if connection_data is None:
             return None
-        connection_builder = DBConnectionBuilder(
+        connection_params = prepare_connection_params(
             connection_data['host'], connection_data['port'], options.username, options.dbname)
-        return cls(connection_builder)
+        return cls(connection_params)
