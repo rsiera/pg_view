@@ -6,11 +6,11 @@ from multiprocessing import JoinableQueue
 from unittest import TestCase
 
 import mock
-# import psutil
+import psutil
 
 from common import TEST_DIR, ErrorAfter, CallableExhaustedError
-from pg_view.collectors.partition_collector import PartitionStatCollector, DetachedDiskStatCollector, \
-    DiskCollectorConsumer
+from pg_view.collectors.partition_collector import PartitionStatCollector, DetachedDiskStatCollector
+from pg_view.models.consumers import DiskCollectorConsumer
 
 sdiskio = namedtuple(
     'sdiskio', ['read_count', 'write_count', 'read_bytes', 'write_bytes', 'read_time', 'write_time', 'busy_time']
@@ -54,7 +54,6 @@ class PartitionStatCollectorTest(TestCase):
         dev_name = self.collector._dereference_dev_name('/dev/sda1')
         self.assertEqual('sda1', dev_name)
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.collectors.partition_collector.PartitionStatCollector.get_missing_io_stat_from_file')
     @mock.patch('pg_view.collectors.partition_collector.psutil.disk_io_counters')
     def test_get_io_data_should_return_data_when_disk_in_pnames(self, mocked_disk_io_counters,
@@ -76,7 +75,6 @@ class PartitionStatCollectorTest(TestCase):
 
         self.assertEqual(expected_data, io_data)
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.collectors.partition_collector.psutil.disk_io_counters')
     def test_get_io_data_should_return_empty_when_disk_not_in_pnames(self, mocked_disk_io_counters):
         mocked_disk_io_counters.return_value = {
@@ -87,14 +85,12 @@ class PartitionStatCollectorTest(TestCase):
         io_data = self.collector.get_io_data('sda2')
         self.assertEqual({}, io_data)
 
-    @unittest.skip('psutil')
     def test_get_name_from_fields_should_return_ok_when_linux_24(self):
         fields = [
             '8', '1', 'sda1', '11523', '7', '383474', '7304', '24134', '24124', '528624', '6276', '0', '5916', '13452']
         name = self.collector.get_name_from_fields(fields)
         self.assertEqual('sda1', name)
 
-    @unittest.skip('psutil')
     def test_get_name_from_fields_should_return_ok_when_linux_26(self):
         fields = [
             '0', '8', '1', 'sda2', '11523', '7', '383474', '7304', '24134', '24124', '528624', '6276', '0', '5916',
@@ -103,8 +99,7 @@ class PartitionStatCollectorTest(TestCase):
         name = self.collector.get_name_from_fields(fields)
         self.assertEqual('sda2', name)
 
-    @unittest.skip('psutil')
-    # @unittest.skipUnless(psutil.LINUX, "Linux only")
+    @unittest.skipUnless(psutil.LINUX, "Linux only")
     @mock.patch('pg_view.collectors.partition_collector.psutil.disk_io_counters')
     @mock.patch('pg_view.collectors.partition_collector.PartitionStatCollector.get_missing_io_stat_from_file')
     def test_get_io_data_should_parse_data_from_proc_meminfo_when_linux(self, mocked_get_missing_io_stat_from_file,
@@ -122,8 +117,7 @@ class PartitionStatCollectorTest(TestCase):
         self.assertEqual(expected_data, refreshed_data)
         mocked_get_missing_io_stat_from_file.assert_called_with(['sda1'])
 
-    @unittest.skip('psutil')
-    # @unittest.skipUnless(psutil.LINUX, "Linux only")
+    @unittest.skipUnless(psutil.LINUX, "Linux only")
     @mock.patch('pg_view.collectors.system_collector.psutil._pslinux.open_text')
     def test_get_missing_io_stat_from_file_should_return_empty_when_no_data_for_name(self, mocked_open_text):
         cpu_info_ok = os.path.join(TEST_DIR, 'proc_files', 'diskstat_24')
@@ -132,8 +126,7 @@ class PartitionStatCollectorTest(TestCase):
         expected_data = {}
         self.assertEqual(expected_data, refreshed_data)
 
-    @unittest.skip('psutil')
-    # @unittest.skipUnless(psutil.LINUX, "Linux only")
+    @unittest.skipUnless(psutil.LINUX, "Linux only")
     @mock.patch('pg_view.collectors.system_collector.psutil._pslinux.open_text')
     def test_get_missing_io_stat_from_file_should_return_stats_when_data_for_names_24(self, mocked_open_text):
         cpu_info_ok = os.path.join(TEST_DIR, 'proc_files', 'diskstat_24')
@@ -142,8 +135,7 @@ class PartitionStatCollectorTest(TestCase):
         expected_data = {'sda': {'await': 13524}, 'sda1': {'await': 13476}}
         self.assertEqual(expected_data, refreshed_data)
 
-    @unittest.skip('psutil')
-    # @unittest.skipUnless(psutil.LINUX, "Linux only")
+    @unittest.skipUnless(psutil.LINUX, "Linux only")
     @mock.patch('pg_view.collectors.system_collector.psutil._pslinux.open_text')
     def test_get_missing_io_stat_from_file_should_return_stats_when_data_for_names_26(self, mocked_open_text):
         cpu_info_ok = os.path.join(TEST_DIR, 'proc_files', 'diskstat_26')
@@ -256,14 +248,12 @@ class DetachedDiskStatCollectorTest(TestCase):
         self.assertEqual((4096, 4096,), df_data)
         mocked_os_statvfs.assert_not_called()
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.collectors.partition_collector.psutil.disk_partitions', return_value=[])
     def test_get_mounted_device_should_return_none_when_no_device_on_pathname(self, mocked_disk_partitions):
         detached_disk = DetachedDiskStatCollector(mock.Mock(), ['/var/lib/postgresql/9.3/main'], 9.3)
         mounted_device = detached_disk.get_mounted_device('/test')
         self.assertIsNone(mounted_device)
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.collectors.partition_collector.psutil.disk_partitions')
     def test_get_mounted_device_should_return_dev_when_device_on_pathname(self, mocked_disk_partitions):
         device = mock.Mock(mountpoint='/', device='sda1')
@@ -271,63 +261,3 @@ class DetachedDiskStatCollectorTest(TestCase):
         detached_disk = DetachedDiskStatCollector(mock.Mock(), ['/var/lib/postgresql/9.3/main'], 9.3)
         mounted_device = detached_disk.get_mounted_device('/')
         self.assertEqual('sda1', mounted_device)
-
-
-class DiskCollectorConsumerTest(TestCase):
-    def test_consume_should_not_get_new_data_from_queue_when_old_not_consumed(self):
-        queue = mock.Mock()
-        first_data = {'/var/lib/postgresql/9.3/main': [{
-            'xlog': ('16388', '/var/lib/postgresql/9.3/main/pg_xlog'),
-            'data': ('35620', '/var/lib/postgresql/9.3/main')
-        }, {
-            'xlog': ('/dev/sda1', 41251136, 37716376),
-            'data': ('/dev/sda1', 41251136, 37716376)}
-        ]}
-
-        queue.get_nowait.return_value = first_data
-
-        consumer = DiskCollectorConsumer(queue)
-        consumer.consume()
-        self.assertEqual(first_data, consumer.result)
-        self.assertEqual(first_data, consumer.cached_result)
-
-        self.assertIsNone(consumer.consume())
-        self.assertEqual(first_data, consumer.result)
-        self.assertEqual(first_data, consumer.cached_result)
-
-    def test_consume_should_consume_new_data_when_old_fetched(self):
-        queue = mock.Mock()
-        first_data = {'/var/lib/postgresql/9.3/main': [{
-            'xlog': ('16388', '/var/lib/postgresql/9.3/main/pg_xlog'),
-            'data': ('35620', '/var/lib/postgresql/9.3/main')
-        }, {
-            'xlog': ('/dev/sda1', 41251136, 37716376),
-            'data': ('/dev/sda1', 41251136, 37716376)}
-        ]}
-
-        second_data = {'/var/lib/postgresql/9.3/main': [{
-            'xlog': ('16389', '/var/lib/postgresql/9.3/main/pg_xlog'),
-            'data': ('35621', '/var/lib/postgresql/9.3/main')
-        }, {
-            'xlog': ('/dev/sda1', 41251137, 37716377),
-            'data': ('/dev/sda1', 41251137, 37716377)}
-        ]}
-
-        queue.get_nowait.side_effect = [first_data.copy(), second_data.copy()]
-
-        consumer = DiskCollectorConsumer(queue)
-        consumer.consume()
-        self.assertEqual(first_data, consumer.result)
-        self.assertEqual(first_data, consumer.cached_result)
-
-        self.assertEqual(first_data['/var/lib/postgresql/9.3/main'], consumer.fetch('/var/lib/postgresql/9.3/main'))
-        self.assertEqual({}, consumer.result)
-        self.assertEqual(first_data, consumer.cached_result)
-
-        consumer.consume()
-        self.assertEqual(second_data, consumer.result)
-        self.assertEqual(second_data, consumer.cached_result)
-
-        self.assertEqual(second_data['/var/lib/postgresql/9.3/main'], consumer.fetch('/var/lib/postgresql/9.3/main'))
-        self.assertEqual({}, consumer.result)
-        self.assertEqual(second_data, consumer.cached_result)

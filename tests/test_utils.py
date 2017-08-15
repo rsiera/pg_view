@@ -1,14 +1,14 @@
 import os
-import subprocess
 from unittest import TestCase
 
 import mock
+import psutil
 
 from common import TEST_DIR
 from pg_view.exceptions import InvalidConnectionParamError
 from pg_view.models.parsers import connection_params
 from pg_view.utils import UnitConverter, read_configuration, validate_autodetected_conn_param, \
-    exec_command_with_output, output_method_is_valid
+    output_method_is_valid, get_process_or_none
 
 
 class UnitConverterTest(TestCase):
@@ -101,48 +101,33 @@ class ValidateConnParamTest(TestCase):
                 '/var/lib/postgresql/9.3/main', 9.5, '/var/run/postgresql', conn_parameters)
 
 
-class CommandExecutorTest(TestCase):
-    @mock.patch('pg_view.utils.logger')
-    @mock.patch('pg_view.utils.subprocess.Popen')
-    def test_exec_command_with_output_should_log_info_when_cmd_return_not_zero_exit_code(self, mocked_popen,
-                                                                                         mocked_logger):
-        cmdline = 'ps -o pid --ppid 1049 --noheaders'
-        proc = mock.MagicMock()
-        proc.wait.return_value = 1
-        proc.stdout.read.return_value = ' 1051\n 1052\n 1053\n 1054\n 1055\n 11139\n 26585\n'
-        mocked_popen.return_value = proc
-        ret, stdout = exec_command_with_output(cmdline)
-        mocked_popen.assert_called_with(cmdline, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-        mocked_logger.info.assert_called_with(
-            'The command ps -o pid --ppid 1049 --noheaders returned a non-zero exit code')
-
-        self.assertEqual(1, ret)
-        self.assertEqual('1051\n 1052\n 1053\n 1054\n 1055\n 11139\n 26585', stdout)
-
-    @mock.patch('pg_view.utils.logger')
-    @mock.patch('pg_view.utils.subprocess.Popen')
-    def test_exec_command_with_output_should_return_ret_stdout_when_cmd_return_zero_exit_code(self, mocked_popen,
-                                                                                              mocked_logger):
-        cmdline = 'ps -o pid --ppid 1049 --noheaders'
-        proc = mock.MagicMock()
-        proc.wait.return_value = 0
-        proc.stdout.read.return_value = ' 1051\n 1052\n 1053\n 1054\n 1055\n 11139\n 26585\n'
-        mocked_popen.return_value = proc
-        ret, stdout = exec_command_with_output(cmdline)
-        mocked_popen.assert_called_with(cmdline, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-        self.assertFalse(mocked_logger.info.called)
-
-        self.assertEqual(0, ret)
-        self.assertEqual('1051\n 1052\n 1053\n 1054\n 1055\n 11139\n 26585', stdout)
-
-
 class ValidatorTest(TestCase):
     def test_output_method_is_valid_should_return_true_when_valid(self):
-        ALLOWED_OUTPUTS = ['console', 'json', 'curses']
-        for output in ALLOWED_OUTPUTS:
+        for output in ['console', 'json', 'curses']:
             self.assertTrue(output_method_is_valid(output))
 
     def test_output_method_is_valid_should_return_false_when_invalid(self):
-        ALLOWED_OUTPUTS = ['test', 'foo', 1]
-        for output in ALLOWED_OUTPUTS:
+        for output in ['test', 'foo', 1]:
             self.assertFalse(output_method_is_valid(output))
+
+
+class GetProcessOrNoneTest(TestCase):
+    @mock.patch('pg_view.utils.logger')
+    @mock.patch('pg_view.utils.psutil.Process')
+    def test_get_process_or_none_should_return_none_when_no_such_process_raised(self, mocked_process, mocked_logger):
+        mocked_process.side_effect = psutil.NoSuchProcess('')
+        self.assertIsNone(get_process_or_none(1049))
+        mocked_logger.warning.assert_called_with('Process no. 1049 disappeared while processing')
+
+    @mock.patch('pg_view.utils.logger')
+    @mock.patch('pg_view.utils.psutil.Process')
+    def test_get_process_or_none_should_return_none_when_access_denied_raised(self, mocked_process, mocked_logger):
+        mocked_process.side_effect = psutil.AccessDenied('')
+        self.assertIsNone(get_process_or_none(1049))
+        mocked_logger.warning.assert_called_with('No permission to access process no. 1049')
+
+    @mock.patch('pg_view.utils.psutil.Process')
+    def test_get_process_or_none_should_return_process_when_no_errors(self, mocked_process):
+        process = mock.Mock()
+        mocked_process.return_value = process
+        self.assertEqual(process, get_process_or_none(1049))

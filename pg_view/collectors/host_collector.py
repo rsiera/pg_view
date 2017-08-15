@@ -1,7 +1,8 @@
 import os
 import socket
-from datetime import timedelta
+from datetime import datetime
 from multiprocessing import cpu_count
+import psutil
 
 from pg_view.collectors.base_collector import BaseStatCollector
 from pg_view.loggers import logger
@@ -11,7 +12,6 @@ from pg_view.models.outputs import COLHEADER
 
 class HostStatCollector(BaseStatCollector):
     """ General system-wide statistics """
-    UPTIME_FILE = '/proc/uptime'
 
     def __init__(self):
         super(HostStatCollector, self).__init__(produce_diffs=False)
@@ -19,9 +19,6 @@ class HostStatCollector(BaseStatCollector):
 
         self.transform_list_data = [
             {'out': 'loadavg', 'infn': self._concat_load_avg}
-        ]
-        self.transform_uptime_data = [
-            {'out': 'uptime', 'in': 0, 'fn': self._uptime_to_str}
         ]
 
         self.transform_uname_data = [
@@ -80,13 +77,23 @@ class HostStatCollector(BaseStatCollector):
         self._do_refresh([raw_result])
         return raw_result
 
+    def _read_uptime(self):
+        uptime = datetime.now().replace(microsecond=0) - datetime.fromtimestamp(psutil.boot_time())
+        return {'uptime': str(uptime)}
+
     def _read_load_average(self):
         return self._transform_list(os.getloadavg())
 
-    @staticmethod
-    def _concat_load_avg(colname, row, optional):
+    def _concat_load_avg(self, colname, row, optional):
         """ concat all load averages into a single string """
         return ' '.join(str(x) for x in row[:3]) if len(row) >= 3 else ''
+
+    @staticmethod
+    def _read_hostname():
+        return {'hostname': socket.gethostname()}
+
+    def _read_uname(self):
+        return self._transform_input(os.uname(), self.transform_uname_data)
 
     @staticmethod
     def _read_cpus():
@@ -103,28 +110,5 @@ class HostStatCollector(BaseStatCollector):
             return None
         return '{0} {1}'.format(row[0], row[2])
 
-    def _read_uptime(self):
-        fp = None
-        raw_result = []
-        try:
-            fp = open(HostStatCollector.UPTIME_FILE, 'rU')
-            raw_result = fp.read().split()
-        except:
-            logger.error('Unable to read uptime from {0}'.format(HostStatCollector.UPTIME_FILE))
-        finally:
-            fp and fp.close()
-        return self._transform_input(raw_result, self.transform_uptime_data)
-
-    @staticmethod
-    def _uptime_to_str(uptime):
-        return str(timedelta(seconds=int(float(uptime))))
-
-    @staticmethod
-    def _read_hostname():
-        return {'hostname': socket.gethostname()}
-
-    def _read_uname(self):
-        return self._transform_input(os.uname(), self.transform_uname_data)
-
-    def output(self, displayer, before_string=None, after_string=None):
-        return super(HostStatCollector, self).output(displayer, before_string='Host statistics', after_string='\n')
+    def output(self, displayer):
+        return super(self.__class__, self).output(displayer, before_string='Host statistics', after_string='\n')

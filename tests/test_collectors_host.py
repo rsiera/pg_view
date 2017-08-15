@@ -1,5 +1,4 @@
 import json
-import unittest
 from datetime import datetime
 from unittest import TestCase
 
@@ -30,7 +29,6 @@ class HostStatCollectorTest(TestCase):
         refreshed_data = self.collector._read_load_average()
         self.assertEqual({'loadavg': '3.47 3.16 2.89'}, refreshed_data)
 
-    @unittest.skip('psutil')
     @freeze_time('2016-10-31 00:25:00')
     @mock.patch('pg_view.collectors.host_collector.psutil.boot_time', return_value=1477834496.0)
     def test_refresh_should_call_uptime(self, mocked_boot_time):

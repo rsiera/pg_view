@@ -1,12 +1,11 @@
-import unittest
 from unittest import TestCase
 
 import mock
 import psycopg2
 
 from pg_view.exceptions import NotConnectedError, NoPidConnectionError, DuplicatedConnectionError
-from pg_view.models.db_client import read_postmaster_pid, make_cluster_desc, DBConnectionFinder, DBClient, \
-    prepare_connection_params
+from pg_view.models.db_client import read_postmaster_pid, make_cluster_desc, prepare_connection_params, \
+    DBConnectionFinder, DBClient
 
 
 class DbClientUtilsTest(TestCase):
@@ -134,20 +133,19 @@ class DBConnectionFinderTest(TestCase):
     def test_can_connect_with_connection_arguments_should_return_false_when_no_connection(self, mocked_psycopg2_connect,
                                                                                           mocked_logger):
         finder = DBConnectionFinder('workdir', 1049, '9.3', 'username', 'atlas')
-        connection_builder = prepare_connection_params(host='127.0.0.1', port=5431)
-        can_connect = finder.can_connect_with_connection_arguments(connection_builder)
+        connection_params = prepare_connection_params(host='127.0.0.1', port=5431)
+        can_connect = finder.can_connect_with_connection_arguments(connection_params)
         self.assertFalse(can_connect)
         mocked_psycopg2_connect.assert_called_once_with(host='127.0.0.1', port=5431)
 
     @mock.patch('pg_view.models.db_client.psycopg2.connect')
     def test_can_connect_with_connection_arguments_should_return_true_when_connection_ok(self, mocked_psycopg2_connect):
         finder = DBConnectionFinder('workdir', 1049, '9.3', 'username', 'atlas')
-        connection_builder = prepare_connection_params(host='127.0.0.1', port=5431)
-        can_connect = finder.can_connect_with_connection_arguments(connection_builder)
+        connection_params = prepare_connection_params(host='127.0.0.1', port=5431)
+        can_connect = finder.can_connect_with_connection_arguments(connection_params)
         self.assertTrue(can_connect)
         mocked_psycopg2_connect.assert_called_once_with(host='127.0.0.1', port=5431)
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.models.db_client.logger')
     @mock.patch('pg_view.models.db_client.ProcNetParser')
     def test_detect_with_proc_net_should_return_none_when_no_connections_from_sockets(self, mocked_proc_net_parser,
@@ -160,7 +158,6 @@ class DBConnectionFinderTest(TestCase):
         expected_msg = 'could not detect connection string from /proc/net for postgres process 1049'
         mocked_logger.error.assert_called_once_with(expected_msg)
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.models.db_client.ProcNetParser')
     def test_detect_with_proc_net_should_return_result_when_connections_from_socket(self, mocked_proc_net_parser):
         finder = DBConnectionFinder('workdir', 1049, '9.3', 'username', 'atlas')

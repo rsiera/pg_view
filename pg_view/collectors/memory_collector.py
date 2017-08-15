@@ -1,11 +1,11 @@
-from pg_view.collectors.base_collector import BaseStatCollector, warn_non_optional_column
-from pg_view.loggers import logger
+import psutil
+from pg_view.collectors.base_collector import BaseStatCollector, warn_non_optional_column, _remap_params
 from pg_view.models.formatters import FnFormatter, StatusFormatter
+from pg_view.utils import KB_IN_MB
 
 
 class MemoryStatCollector(BaseStatCollector):
     """ Collect memory-related statistics """
-    MEMORY_STAT_FILE = '/proc/meminfo'
 
     def __init__(self):
         super(MemoryStatCollector, self).__init__(produce_diffs=False)
@@ -93,43 +93,41 @@ class MemoryStatCollector(BaseStatCollector):
         self.postinit()
 
     def refresh(self):
-        """ Read statistics from /proc/meminfo """
-
-        memdata = self._read_memory_data()
+        memdata = self.read_memory_data()
         raw_result = self._transform_input(memdata)
         self._do_refresh([raw_result])
         return raw_result
 
-    @staticmethod
-    def _read_memory_data():
-        """ Read relevant data from /proc/meminfo. We are interesed in the following fields:
-            MemTotal, MemFree, Buffers, Cached, Dirty, CommitLimit, Committed_AS
-        """
-        result = {}
-        try:
-            fp = open(MemoryStatCollector.MEMORY_STAT_FILE, 'rU')
-            for l in fp:
-                vals = l.strip().split()
-                if len(vals) >= 2:
-                    name, val = vals[:2]
-                    # if we have units of measurement different from kB - transform the result
-                    if len(vals) == 3 and vals[2] in ('mB', 'gB'):
-                        if vals[2] == 'mB':
-                            val += '0' * 3
-                        if vals[2] == 'gB':
-                            val += '0' * 6
-                    if len(str(name)) > 1:
-                        result[str(name)[:-1]] = val
-                    else:
-                        logger.error('name is too short: {0}'.format(str(name)))
-                else:
-                    logger.error('/proc/meminfo string is not name value: {0}'.format(vals))
-        except:
-            logger.error('Unable to read /proc/meminfo memory statistics. Check your permissions')
-            return result
-        finally:
-            fp.close()
-        return result
+    def read_memory_data(self):
+        psutil_to_output_mapping = {
+            'total': 'MemTotal',
+            'free': 'MemFree',
+            'buffers': 'Buffers',
+            'cached': 'Cached',
+            'Dirty:': 'Dirty',
+            'CommitLimit:': 'CommitLimit',
+            'Committed_AS:': 'Committed_AS',
+        }
+
+        memory_stats = psutil.virtual_memory()._asdict()
+        if psutil.LINUX:
+            refreshed_memory_stats = self.get_missing_memory_stat_from_file()
+            memory_stats.update(refreshed_memory_stats)
+        memory_stats_in_kb = self._convert_to_kb(memory_stats)
+        return _remap_params(memory_stats_in_kb, psutil_to_output_mapping)
+
+    def _convert_to_kb(self, memory_stats):
+        return {k: self.unit_converter.bytes_to_kb(v) for k, v in memory_stats.items()}
+
+    def get_missing_memory_stat_from_file(self):
+        missing_data = dict.fromkeys(['Dirty:', 'CommitLimit:', 'Committed_AS:'], 0)
+        from psutil._pslinux import get_procfs_path, open_binary
+        with open_binary('%s/meminfo' % get_procfs_path()) as f:
+            for line in f:
+                fields = line.split()
+                if fields[0] in missing_data.keys():
+                    missing_data[fields[0]] = int(fields[1]) * KB_IN_MB
+        return missing_data
 
     def calculate_kb_left_until_limit(self, colname, row, optional):
         memory_left = (int(row['CommitLimit']) - int(row['Committed_AS']) if self._is_commit(row) else None)
@@ -140,5 +138,5 @@ class MemoryStatCollector(BaseStatCollector):
     def _is_commit(self, row):
         return row.get('CommitLimit') is not None and row.get('Committed_AS') is not None
 
-    def output(self, displayer, before_string=None, after_string=None):
-        return super(MemoryStatCollector, self).output(displayer, before_string='Memory statistics:', after_string='\n')
+    def output(self, displayer):
+        return super(self.__class__, self).output(displayer, before_string='Memory statistics:', after_string='\n')

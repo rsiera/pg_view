@@ -4,13 +4,12 @@ from collections import namedtuple
 from unittest import TestCase
 
 import mock
-# import psutil
+import psutil
 import psycopg2
 
-from pg_view.collectors.pg_collector import PgStatCollector
+from pg_view.collectors.pg_collector import dbversion_as_float, PgStatCollector
 from pg_view.sqls import SHOW_MAX_CONNECTIONS, SELECT_PG_IS_IN_RECOVERY, SELECT_PGSTAT_VERSION_LESS_THAN_92, \
     SELECT_PGSTAT_VERSION_LESS_THAN_96, SELECT_PGSTAT_NEVER_VERSION
-from pg_view.utils import dbversion_as_float
 
 pmem = namedtuple('pmem', ['rss', 'vms', 'shared', 'text', 'lib', 'data', 'dirty'])
 pio = namedtuple('pio', ['read_count', 'write_count', 'read_bytes', 'write_bytes'])
@@ -60,24 +59,28 @@ class PgStatCollectorTest(TestCase):
         self.assertEqual('unknown', pstype)
         self.assertIsNone(action)
 
-    @unittest.skip('psutil')
-    @mock.patch('pg_view.collectors.pg_collector.psutil.Process')
+    @mock.patch('pg_view.collectors.pg_collector.get_process_or_none', return_value=None)
+    def test_get_subprocesses_pid_should_return_empty_when_no_process(self, mocked_get_process):
+        collector = PgStatCollector.from_cluster(self.cluster, 1049)
+        self.assertEqual([], collector.get_subprocesses_pid())
+
+    @mock.patch('pg_view.collectors.pg_collector.get_process_or_none')
     @mock.patch('pg_view.collectors.pg_collector.logger')
-    def test_get_subprocesses_pid_should_return_empty_when_no_cmd_output(self, mocked_logger, mocked_process):
-        mocked_process.return_value.children.return_value = []
+    def test_get_subprocesses_pid_should_return_empty_when_no_subprocess(self, mocked_logger, mocked_get_process):
+        mocked_process = mock.Mock(**{'children.return_value': []})
+        mocked_get_process.return_value = mocked_process
         collector = PgStatCollector.from_cluster(self.cluster, 1049)
         self.assertEqual([], collector.get_subprocesses_pid())
         mocked_logger.info.assert_called_with("Couldn't determine the pid of subprocesses for 1049")
 
-    @unittest.skip('psutil')
-    @mock.patch('pg_view.collectors.pg_collector.psutil.Process')
-    def test_get_subprocesses_pid_should_return_subprocesses_when_children_processes(self, mocked_process):
+    @mock.patch('pg_view.collectors.pg_collector.get_process_or_none')
+    def test_get_subprocesses_pid_should_return_subprocesses_when_children_processes(self, mocked_get_process):
         subprocesses = [mock.Mock(pid=1051), mock.Mock(pid=1052), mock.Mock(pid=1206)]
-        mocked_process.return_value.children.return_value = subprocesses
+        mocked_process = mock.Mock(**{'children.return_value': subprocesses})
+        mocked_get_process.return_value = mocked_process
         collector = PgStatCollector.from_cluster(self.cluster, 1049)
         self.assertEqual([1051, 1052, 1206], collector.get_subprocesses_pid())
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.collectors.pg_collector.psutil.Process')
     def test__get_memory_usage_should_return_uss_when_memory_info_ok(self, mocked_psutil_process):
         mocked_psutil_process.return_value.memory_info.return_value = pmem(
@@ -129,25 +132,34 @@ class PgStatCollectorTest(TestCase):
         collector = PgStatCollector.from_cluster(cluster, 1049)
         self.assertEqual(SELECT_PGSTAT_NEVER_VERSION, collector.get_sql_pgstat_by_version())
 
-    @unittest.skip('psutil')
-    @mock.patch('pg_view.collectors.pg_collector.os')
-    @mock.patch('pg_view.collectors.pg_collector.psutil.Process')
-    def test__read_proc_should_return_data_when_process_ok(self, mocked_psutil_process, mocked_os):
+    @mock.patch('pg_view.utils.os')
+    @mock.patch('pg_view.collectors.pg_collector.get_process_or_none')
+    def test__read_proc_should_return_empty_when_process_is_none(self, mocked_get_process, mocked_os):
         collector = PgStatCollector.from_cluster(self.cluster, 1049)
         mocked_os.sysconf.return_value.SC_PAGE_SIZE = 4096
-        mocked_process = mocked_psutil_process.return_value
-        mocked_process.pid = 1049
-        mocked_process.status.return_value = 'status'
-        mocked_process.io_counters.return_value = pio(
-            read_count=12, write_count=13, read_bytes=655, write_bytes=1)
-        cpu_times = pcputimes(user=0.02, system=0.01, children_user=0.0, children_system=0.0)
-        memory_info = pmem(
-            rss=1769472, vms=252428288, shared=344064, text=5492736, lib=0, data=1355776, dirty=0)
-        mocked_process.cpu_times.return_value = cpu_times
-        mocked_process.memory_info.return_value = memory_info
-        mocked_process.nice.return_value = '10'
-        mocked_process.cmdline.return_value = ['backend \n']
-        mocked_process.create_time.return_value = 1480777289.0
+
+        mocked_get_process.return_value = None
+        proc_stats = collector.get_proc_data(1048)
+        self.assertEqual({}, proc_stats)
+
+    @mock.patch('pg_view.utils.os')
+    @mock.patch('pg_view.collectors.pg_collector.get_process_or_none')
+    def test__read_proc_should_return_data_when_process_ok(self, mocked_get_process, mocked_os):
+        collector = PgStatCollector.from_cluster(self.cluster, 1049)
+        mocked_os.sysconf.return_value.SC_PAGE_SIZE = 4096
+
+        mocked_process = mock.Mock(**{
+            'pid': 1049,
+            'status.return_value': 'status',
+            'io_counters.return_value': pio(read_count=12, write_count=13, read_bytes=655, write_bytes=1),
+            'cpu_times.return_value': pcputimes(user=0.02, system=0.01, children_user=0.0, children_system=0.0),
+            'memory_info.return_value': pmem(
+                rss=1769472, vms=252428288, shared=344064, text=5492736, lib=0, data=1355776, dirty=0),
+            'nice.return_value': '10',
+            'cmdline.return_value': ['backend \n'],
+            'create_time.return_value': 1480777289.0,
+        })
+        mocked_get_process.return_value = mocked_process
         proc_stats = collector.get_proc_data(1048)
         expected_proc_stats = {
             'read_bytes': 655,
@@ -168,8 +180,7 @@ class PgStatCollectorTest(TestCase):
         }
         self.assertEqual(expected_proc_stats, proc_stats)
 
-    @unittest.skip('psutil')
-    # @unittest.skipUnless(psutil.LINUX, 'Linux only')
+    @unittest.skipUnless(psutil.LINUX, 'Linux only')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_psinfo')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_memory_usage')
     def test_get_additional_info_should_update_when_not_backend_and_action(self, mocked__get_memory_usage,
@@ -180,8 +191,7 @@ class PgStatCollectorTest(TestCase):
         info = collector.get_additional_proc_info(1049, {'cmdline': ''}, [10])
         self.assertEqual({'type': 'vacuum', 'query': 'query', 'cmdline': '', 'uss': 10}, info)
 
-    @unittest.skip('psutil')
-    # @unittest.skipUnless(psutil.LINUX, 'Linux only')
+    @unittest.skipUnless(psutil.LINUX, 'Linux only')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_psinfo')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_memory_usage')
     def test_get_additional_info_should_update_when_not_backend_and_not_action(self, mocked__get_memory_usage,
@@ -192,7 +202,6 @@ class PgStatCollectorTest(TestCase):
         info = collector.get_additional_proc_info(1049, {'cmdline': ''}, [10])
         self.assertEqual({'type': 'vacuum', 'cmdline': '', 'uss': 10}, info)
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_psinfo')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_memory_usage')
     def test_get_additional_info_should_update_when_backend_and_not_active(self, mocked__get_memory_usage,
@@ -203,8 +212,7 @@ class PgStatCollectorTest(TestCase):
         info = collector.get_additional_proc_info(1049, {'cmdline': ''}, {1049: {'query': 'idle'}})
         self.assertEqual({'type': 'backend', 'cmdline': ''}, info)
 
-    @unittest.skip('psutil')
-    # @unittest.skipUnless(psutil.LINUX, 'Linux only')
+    @unittest.skipUnless(psutil.LINUX, 'Linux only')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_psinfo')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_memory_usage')
     def test_get_additional_info_should_update_when_backend_and_active_query_not_idle(self, mocked__get_memory_usage,
@@ -215,8 +223,7 @@ class PgStatCollectorTest(TestCase):
         info = collector.get_additional_proc_info(1049, {'cmdline': ''}, {1049: {'query': 'not idle'}})
         self.assertEqual({'type': 'backend', 'cmdline': '', 'uss': 10}, info)
 
-    @unittest.skip('psutil')
-    # @unittest.skipUnless(psutil.LINUX, 'Linux only')
+    @unittest.skipUnless(psutil.LINUX, 'Linux only')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_psinfo')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_memory_usage')
     def test_get_additional_info_should_update_when_backend_and_active_pid_in_track_pids(self, mocked__get_memory_usage,
@@ -275,8 +282,25 @@ class PgStatCollectorTest(TestCase):
             collector.ncurses_produce_prefix()
         )
 
-    @unittest.skip('psutil')
-    # @unittest.skipUnless(psutil.LINUX, 'Linux only')
+    @mock.patch('pg_view.logger')
+    def test_get_io_counters_should_return_io_stats_when_io_counters(self, mocked_logger):
+        mocked_process = mock.Mock(
+            **{'io_counters.return_value': mock.Mock(read_bytes=10, write_bytes=20)})
+
+        collector = PgStatCollector.from_cluster(self.cluster, [1049])
+        io_counters = collector.get_io_counters(mocked_process)
+        self.assertEqual({'read_bytes': 10, 'write_bytes': 20}, io_counters)
+
+    @mock.patch('pg_view.collectors.pg_collector.logger')
+    def test_get_io_counters_should_return_empty_when_io_counters_throws_error(self, mocked_logger):
+        mocked_process = mock.Mock(**{'io_counters.side_effect': psutil.AccessDenied, 'pid': 1049})
+
+        collector = PgStatCollector.from_cluster(self.cluster, [1049])
+        io_counters = collector.get_io_counters(mocked_process)
+        self.assertEqual({}, io_counters)
+        mocked_logger.warning.assert_called_with("No permission to access process no. 1049")
+
+    @unittest.skipUnless(psutil.LINUX, 'Linux only')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_memory_usage', return_value=10)
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._read_pg_stat_activity')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector.get_subprocesses_pid', return_value=[1010])
@@ -337,7 +361,6 @@ class PgStatCollectorTest(TestCase):
         self.assertEqual(expected_results, result)
         mocked__do_refresh.assert_called_with(result)
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._try_reconnect')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_memory_usage', return_value=10)
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._read_pg_stat_activity')
@@ -357,7 +380,6 @@ class PgStatCollectorTest(TestCase):
         mocked_try_reconnect.assert_called_with()
         mocked__do_refresh.assert_called_with(result)
 
-    @unittest.skip('psutil')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._try_reconnect')
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._get_memory_usage', return_value=10)
     @mock.patch('pg_view.collectors.pg_collector.PgStatCollector._read_pg_stat_activity')
@@ -375,6 +397,5 @@ class PgStatCollectorTest(TestCase):
         collector = PgStatCollector.from_cluster(self.cluster, [1049])
         collector.pgcon = None
         mocked_try_reconnect.side_effect = psycopg2.OperationalError
-        result = collector.refresh()
-        self.assertIsNone(result)
+        self.assertEqual([], collector.refresh())
         mocked__do_refresh.assert_called_with([])

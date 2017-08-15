@@ -14,13 +14,13 @@ from pg_view import consts
 from pg_view import flags
 from pg_view.collectors.host_collector import HostStatCollector
 from pg_view.collectors.memory_collector import MemoryStatCollector
-from pg_view.collectors.partition_collector import PartitionStatCollector, DetachedDiskStatCollector, \
-    DiskCollectorConsumer
+from pg_view.collectors.partition_collector import PartitionStatCollector, DetachedDiskStatCollector
 from pg_view.collectors.pg_collector import PgStatCollector
 from pg_view.collectors.system_collector import SystemStatCollector
 from pg_view.exceptions import NoPidConnectionError, InvalidConnectionParamError, NotConnectedError, \
     DuplicatedConnectionError
 from pg_view.loggers import logger, enable_logging_to_stderr, disable_logging_to_stderr
+from pg_view.models.consumers import DiskCollectorConsumer
 from pg_view.models.db_client import make_cluster_desc, DBClient
 from pg_view.models.outputs import CommonOutput, CursesOutput, get_displayer_by_class
 from pg_view.models.parsers import ProcWorker

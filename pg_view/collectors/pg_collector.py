@@ -1,17 +1,20 @@
 import re
 import sys
+from datetime import datetime
 
+import psutil
 import psycopg2
 import psycopg2.extras
 
-from pg_view import consts
-from pg_view.collectors.base_collector import BaseStatCollector
 from pg_view.loggers import logger
-from pg_view.models.formatters import FnFormatter, StatusFormatter
+from pg_view.collectors.base_collector import BaseStatCollector
+from pg_view.consts import RD
+from pg_view.models.formatters import FnFormatter
+from pg_view.models.formatters import StatusFormatter
 from pg_view.models.outputs import COLALIGN
 from pg_view.sqls import SELECT_PG_IS_IN_RECOVERY, SHOW_MAX_CONNECTIONS, SELECT_PGSTAT_VERSION_LESS_THAN_92, \
     SELECT_PGSTAT_VERSION_LESS_THAN_96, SELECT_PGSTAT_NEVER_VERSION
-from pg_view.utils import MEM_PAGE_SIZE, exec_command_with_output, dbversion_as_float
+from pg_view.utils import PAGESIZE, get_process_or_none
 
 if sys.hexversion >= 0x03000000:
     long = int
@@ -20,13 +23,18 @@ else:
     maxsize = sys.maxint
 
 
+def dbversion_as_float(server_version):
+    version_num = server_version
+    version_num //= 100
+    return float('{0}.{1}'.format(version_num // 100, version_num % 100))
+
+
 def process_sort_key(process):
     return process.get('age', maxsize) or maxsize
 
 
 class PgStatCollector(BaseStatCollector):
     """ Collect PostgreSQL-related statistics """
-    STATM_FILENAME = '/proc/{0}/statm'
 
     def __init__(self, pgcon, reconnect, pid, dbname, dbver, always_track_pids):
         super(PgStatCollector, self).__init__()
@@ -49,22 +57,19 @@ class PgStatCollector(BaseStatCollector):
         self.total_connections = 0
         self.active_connections = 0
 
-        self.transform_list_data = [
-            {'out': 'pid', 'in': 0, 'fn': int},
-            {'out': 'state', 'in': 2},
-            {'out': 'utime', 'in': 13, 'fn': self.unit_converter.ticks_to_seconds},
-            {'out': 'stime', 'in': 14, 'fn': self.unit_converter.ticks_to_seconds},
-            {'out': 'priority', 'in': 17, 'fn': int},
-            {'out': 'starttime', 'in': 21, 'fn': long},
-            {'out': 'vsize', 'in': 22, 'fn': int},
-            {'out': 'rss', 'in': 23, 'fn': int},
-            {'out': 'delayacct_blkio_ticks', 'in': 41, 'fn': long, 'optional': True},
-            {'out': 'guest_time', 'in': 42, 'fn': self.unit_converter.ticks_to_seconds, 'optional': True},
-        ]
-
         self.transform_dict_data = [
+            {'out': 'pid', 'fn': int},
+            {'out': 'state'},
+            {'out': 'utime', 'fn': self.unit_converter.ticks_to_seconds},
+            {'out': 'stime', 'fn': self.unit_converter.ticks_to_seconds},
+            {'out': 'rss', 'fn': int},
             {'out': 'read_bytes', 'fn': int, 'optional': True},
-            {'out': 'write_bytes', 'fn': int, 'optional': True}
+            {'out': 'write_bytes', 'fn': int, 'optional': True},
+            {'out': 'priority', 'fn': int},
+            {'out': 'starttime'},
+            {'out': 'vsize', 'fn': int},
+            {'out': 'delayacct_blkio_ticks', 'fn': long, 'optional': True},
+            {'out': 'guest_time', 'fn': self.unit_converter.ticks_to_seconds, 'optional': True}
         ]
 
         self.diff_generator_data = [
@@ -90,6 +95,7 @@ class PgStatCollector(BaseStatCollector):
         self.output_transform_data = [  # query with age 5 and more will have the age column highlighted
             {
                 'out': 'pid',
+                'in': 'pid',
                 'pos': 0,
                 'minw': 5,
                 'noautohide': True,
@@ -101,28 +107,34 @@ class PgStatCollector(BaseStatCollector):
                 'minw': 5,
                 'noautohide': True,
             },
-            {'out': 'type', 'pos': 1},
             {
-                'out': 's',
+                'out': 'type',
+                'in': 'type',
+                'pos': 1
+            },
+            {
+                'out': 'state',
                 'in': 'state',
                 'pos': 2,
                 'status_fn': self.status_formatter.check_ps_state,
-                'warning': 'D',
+                'warning': 'disk-sleep',
             },
             {
                 'out': 'utime',
+                'in': 'utime',
                 'units': '%',
                 'fn': self.unit_converter.time_diff_to_percent,
-                'round': consts.RD,
+                'round': RD,
                 'pos': 4,
                 'warning': 90,
                 'align': COLALIGN.ca_right,
             },
             {
                 'out': 'stime',
+                'in': 'stime',
                 'units': '%',
                 'fn': self.unit_converter.time_diff_to_percent,
-                'round': consts.RD,
+                'round': RD,
                 'pos': 5,
                 'warning': 5,
                 'critical': 30,
@@ -132,21 +144,21 @@ class PgStatCollector(BaseStatCollector):
                 'in': 'guest_time',
                 'units': '%',
                 'fn': self.unit_converter.time_diff_to_percent,
-                'round': consts.RD,
+                'round': RD,
                 'pos': 6,
             },
             {
                 'out': 'delay_blkio',
                 'in': 'delayacct_blkio_ticks',
                 'units': '/s',
-                'round': consts.RD,
+                'round': RD,
             },
             {
                 'out': 'read',
                 'in': 'read_bytes',
                 'units': 'MB/s',
                 'fn': self.unit_converter.bytes_to_mbytes,
-                'round': consts.RD,
+                'round': RD,
                 'pos': 7,
                 'noautohide': True,
             },
@@ -155,7 +167,7 @@ class PgStatCollector(BaseStatCollector):
                 'in': 'write_bytes',
                 'units': 'MB/s',
                 'fn': self.unit_converter.bytes_to_mbytes,
-                'round': consts.RD,
+                'round': RD,
                 'pos': 8,
                 'noautohide': True,
             },
@@ -164,7 +176,7 @@ class PgStatCollector(BaseStatCollector):
                 'in': 'uss',
                 'units': 'MB',
                 'fn': self.unit_converter.bytes_to_mbytes,
-                'round': consts.RD,
+                'round': RD,
                 'pos': 9,
                 'noautohide': True
             },
@@ -216,12 +228,14 @@ class PgStatCollector(BaseStatCollector):
         return cls(cluster['pgcon'], cluster['reconnect'], cluster['pid'], cluster['name'], cluster['ver'], pid)
 
     def get_subprocesses_pid(self):
-        ppid = self.postmaster_pid
-        result = exec_command_with_output('ps -o pid --ppid {0} --noheaders'.format(ppid))
-        if result[0] != 0:
-            logger.info("Couldn't determine the pid of subprocesses for {0}".format(ppid))
+        process = get_process_or_none(self.postmaster_pid)
+        if process is None:
             return []
-        return [int(x) for x in result[1].split()]
+        subprocesses = process.children()
+        if not subprocesses:
+            logger.info("Couldn't determine the pid of subprocesses for {0}".format(self.postmaster_pid))
+            return []
+        return [p.pid for p in subprocesses]
 
     def ident(self):
         return '{0} ({1}/{2})'.format('postgres', self.dbname, self.dbver)
@@ -271,12 +285,11 @@ class PgStatCollector(BaseStatCollector):
         for pid in pids:
             if pid == self.connection_pid:
                 continue
-            is_backend = pid in stat_data
-            is_active = is_backend and (stat_data[pid]['query'] != 'idle' or pid in self.always_track_pids)
             result_row = {}
             # for each pid, get hash row from /proc/
-            proc_data = self._read_proc(pid, is_backend, is_active)
+            proc_data = self.get_proc_data(pid)
             if proc_data:
+                self.get_additional_proc_info(pid, proc_data, stat_data)
                 result_row.update(proc_data)
             if stat_data and pid in stat_data:
                 # ditto for the pg_stat_activity
@@ -288,52 +301,64 @@ class PgStatCollector(BaseStatCollector):
         self._do_refresh(result)
         return result
 
-    def _read_proc(self, pid, is_backend, is_active):
-        """ see man 5 proc for details (/proc/[pid]/stat) """
+    def get_proc_data(self, pid):
         result = {}
-        raw_result = {}
+        process = get_process_or_none(pid)
+        if process is None:
+            return result
 
-        fp = None
-        # read raw data from /proc/stat, proc/cmdline and /proc/io
-        for ftyp, fname in zip(('stat', 'cmd', 'io',), ('/proc/{0}/stat', '/proc/{0}/cmdline', '/proc/{0}/io')):
-            try:
-                fp = open(fname.format(pid), 'rU')
-                if ftyp == 'stat':
-                    raw_result[ftyp] = fp.read().strip().split()
-                if ftyp == 'cmd':
-                    # large number of trailing \0x00 returned by python
-                    raw_result[ftyp] = fp.readline().strip('\x00').strip()
-                if ftyp == 'io':
-                    proc_stat_io_read = {}
-                    for line in fp:
-                        x = [e.strip(':') for e in line.split()]
-                        if len(x) < 2:
-                            logger.error(
-                                '{0} content not in the "name: value" form: {1}'.format(fname.format(pid), line))
-                            continue
-                        else:
-                            proc_stat_io_read[x[0]] = int(x[1])
-                    raw_result[ftyp] = proc_stat_io_read
-            except IOError:
-                logger.warning('Unable to read {0}, process data will be unavailable'.format(fname.format(pid)))
-                return None
-            finally:
-                fp and fp.close()
+        cpu_times = process.cpu_times()
+        memory_info = process.memory_info()
 
+        proc_stats = {
+            'pid': process.pid,
+            'state': process.status(),
+            'utime': cpu_times.user,
+            'stime': cpu_times.system,
+            'rss': memory_info.rss / PAGESIZE,
+            'priority': process.nice(),
+            'vsize': memory_info.vms,
+            'starttime': datetime.fromtimestamp(process.create_time()),
+            'locked_by': process.username(),
+            'guest_time': cpu_times.guest if hasattr(cpu_times, 'guest') else 0.0,
+            'delayacct_blkio_ticks': self.delayactt_blkio_ticks_or_default(cpu_times),
+        }
+
+        io_stats = self.get_io_counters(process)
+        proc_stats.update(io_stats)
         # Assume we managed to read the row if we can get its PID
-        for cat in 'stat', 'io':
-            result.update(self._transform_input(raw_result.get(cat, {} if cat == 'io' else [])))
-        # generated columns
-        result['cmdline'] = raw_result.get('cmd', None)
-        if not is_backend:
-            result['type'], action = self._get_psinfo(result['cmdline'])
-            if action:
-                result['query'] = action
-        else:
-            result['type'] = 'backend'
-        if is_active or not is_backend:
-            result['uss'] = self._get_memory_usage(pid)
+        result.update(self._transform_input(proc_stats))
+        result['cmdline'] = process.cmdline()[0].strip()
         return result
+
+    def delayactt_blkio_ticks_or_default(self, cpu_times):
+        return cpu_times.delayacct_blkio_ticks if hasattr(cpu_times, 'delayacct_blkio_ticks') else 0
+
+    def get_io_counters(self, process):
+        if not hasattr(process, 'io_counters'):
+            return {}
+        try:
+            io_stats = process.io_counters()
+        except psutil.AccessDenied:
+            logger.warning('No permission to access process no. {}'.format(process.pid))
+            return {}
+        return {
+            'read_bytes': io_stats.read_bytes,
+            'write_bytes': io_stats.write_bytes
+        }
+
+    def get_additional_proc_info(self, pid, proc_data, stat_data):
+        is_backend = pid in stat_data
+        is_active = is_backend and (stat_data[pid]['query'] != 'idle' or pid in self.always_track_pids)
+        if is_backend:
+            proc_data['type'] = 'backend'
+        else:
+            proc_data['type'], action = self._get_psinfo(proc_data['cmdline'])
+            if action:
+                proc_data['query'] = action
+        if psutil.LINUX and (is_active or not is_backend):
+            proc_data['uss'] = self._get_memory_usage(pid)
+        return proc_data
 
     def _try_reconnect(self):
         # if we've lost the connection, try to reconnect and re-initialize all connection invariants
@@ -344,7 +369,6 @@ class PgStatCollector(BaseStatCollector):
         self.server_version = self.pgcon.get_parameter_status('server_version')
 
     def _get_memory_usage(self, pid):
-        """ calculate usage of private memory per process """
         # compute process's own non-shared memory.
         # See http://www.depesz.com/2012/06/09/how-much-ram-is-postgresql-using/ for the explanation of how
         # to measure PostgreSQL process memory usage and the stackexchange answer for details on the unshared counts:
@@ -353,22 +377,8 @@ class PgStatCollector(BaseStatCollector):
         # http://rhaas.blogspot.de/2012/01/linux-memory-reporting.html
         # we use statm instead of /proc/smaps because of performance considerations. statm is much faster,
         # while providing slightly outdated results.
-        uss = 0
-        statm = None
-        fp = None
-        try:
-            fp = open(self.STATM_FILENAME.format(pid), 'r')
-            statm = fp.read().strip().split()
-            logger.info("calculating memory for process {0}".format(pid))
-        except IOError as e:
-            logger.warning(
-                'Unable to read {0}: {1}, process memory information will be unavailable'.format(
-                    self.STATM_FILENAME.format(pid), e))
-        finally:
-            fp and fp.close()
-        if statm and len(statm) >= 3:
-            uss = (long(statm[1]) - long(statm[2])) * MEM_PAGE_SIZE
-        return uss
+        memory_info = psutil.Process(pid).memory_info()
+        return long(memory_info.rss) - long(memory_info.shared)
 
     def _get_max_connections(self):
         result = self._execute_fetchone_query(SHOW_MAX_CONNECTIONS)
@@ -490,5 +500,5 @@ class PgStatCollector(BaseStatCollector):
                             blocked_temp.extend(self.blocked_diffs[child_row['pid']])
                             del self.blocked_diffs[child_row['pid']]
 
-    def output(self, displayer, before_string=None, after_string=None):
-        return super(PgStatCollector, self).output(displayer, before_string='PostgreSQL processes:', after_string='\n')
+    def output(self, displayer):
+        return super(self.__class__, self).output(displayer, before_string='PostgreSQL processes:', after_string='\n')

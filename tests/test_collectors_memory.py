@@ -1,9 +1,10 @@
-import os
 import unittest
 from collections import namedtuple
 from unittest import TestCase
 
 import mock
+import os
+import psutil
 
 from pg_view.collectors.memory_collector import MemoryStatCollector
 from pg_view.utils import open_universal, KB_IN_MB
@@ -15,7 +16,6 @@ class MemoryStatCollectorTest(TestCase):
         self.collector = MemoryStatCollector()
         super(MemoryStatCollectorTest, self).setUp()
 
-    @unittest.skip('psutil')
     def test_refresh_should_contain_proper_data_keys(self):
         refreshed_data = self.collector.refresh()
         self.assertIn('cached', refreshed_data)
@@ -27,9 +27,8 @@ class MemoryStatCollectorTest(TestCase):
         self.assertIn('buffers', refreshed_data)
         self.assertIn('committed_as', refreshed_data)
 
-    @unittest.skip('psutil')
-    @mock.patch('pg_view.models.collector_system.psutil.virtual_memory')
-    @mock.patch('pg_view.models.collector_memory.psutil.LINUX', False)
+    @mock.patch('pg_view.collectors.system_collector.psutil.virtual_memory')
+    @mock.patch('pg_view.collectors.system_collector.psutil.LINUX', False)
     def test_read_memory_data_should_return_data_when_cpu_virtual_memory_for_macos(self, mocked_virtual_memory):
         linux_svmem = namedtuple('linux_svmem', 'total free buffers cached')
         mocked_virtual_memory.return_value = linux_svmem(
@@ -47,10 +46,9 @@ class MemoryStatCollectorTest(TestCase):
         }
         self.assertEqual(expected_data, refreshed_cpu)
 
-    @unittest.skip('psutil')
-    # @unittest.skipUnless(psutil.LINUX, "Linux only")
-    @mock.patch('pg_view.models.collector_memory.psutil._pslinux.open_binary')
-    @mock.patch('pg_view.models.collector_memory.psutil.virtual_memory')
+    @unittest.skipUnless(psutil.LINUX, "Linux only")
+    @mock.patch('pg_view.collectors.memory_collector.psutil._pslinux.open_binary')
+    @mock.patch('pg_view.collectors.memory_collector.psutil.virtual_memory')
     def test__read_memory_data_should_parse_data_from_proc_meminfo_when_linux(self, mocked_virtual_memory,
                                                                               mocked_open_binary):
         meminfo_ok_path = os.path.join(TEST_DIR, 'proc_files', 'meminfo_ok')
@@ -94,9 +92,8 @@ class MemoryStatCollectorTest(TestCase):
         self.assertIsNone(data)
         mocked_logger.error.assert_called_with('Column commit_left is not optional, but input row has no value for it')
 
-    @unittest.skip('psutil')
-    # @unittest.skipUnless(psutil.LINUX, "Linux only")
-    @mock.patch('pg_view.models.collector_system.psutil._pslinux.open_binary')
+    @unittest.skipUnless(psutil.LINUX, "Linux only")
+    @mock.patch('pg_view.collectors.system_collector.psutil._pslinux.open_binary')
     def test_get_missing_memory_stat_from_file_should_parse_data_from_proc_stat(self, mocked_open):
         cpu_info_ok = os.path.join(TEST_DIR, 'proc_files', 'meminfo_ok')
         mocked_open.return_value = open_universal(cpu_info_ok)

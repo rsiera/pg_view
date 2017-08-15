@@ -1,13 +1,14 @@
 import os
 import re
 import resource
-import subprocess
 import sys
 
-from pg_view import consts
+import psutil
+
 from pg_view import flags
-from pg_view.exceptions import InvalidConnectionParamError
+from pg_view import consts
 from pg_view.loggers import logger
+from pg_view.exceptions import InvalidConnectionParamError
 
 if sys.hexversion >= 0x03000000:
     import configparser as ConfigParser
@@ -143,15 +144,6 @@ def validate_autodetected_conn_param(user_dbname, user_dbver, result_work_dir, c
             raise InvalidConnectionParamError
 
 
-def exec_command_with_output(cmdline):
-    """ Execute comand (including shell ones), return a tuple with error code (1 element) and output (rest) """
-    proc = subprocess.Popen(cmdline, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-    ret = proc.wait()
-    if ret != 0:
-        logger.info('The command {cmd} returned a non-zero exit code'.format(cmd=cmdline))
-    return ret, proc.stdout.read().strip()
-
-
 def time_field_to_seconds(val):
     result = 0
     num = 0
@@ -172,6 +164,18 @@ def time_field_to_seconds(val):
             num = 0
             accum_digits = []
     return result
+
+
+def get_process_or_none(pid):
+    try:
+        process = psutil.Process(pid)
+    except psutil.NoSuchProcess:
+        logger.warning('Process no. {} disappeared while processing'.format(pid))
+    except psutil.AccessDenied:
+        logger.warning('No permission to access process no. {}'.format(pid))
+    else:
+        return process
+    return None
 
 
 def dbversion_as_float(server_version):

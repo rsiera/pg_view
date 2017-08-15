@@ -1,17 +1,13 @@
 import os
-import unittest
-from collections import namedtuple
 from unittest import TestCase
 
 import mock
+from psutil._common import sconn
 
 from common import TEST_DIR
 from pg_view.models.parsers import ProcNetParser, get_dbname_from_path, ProcWorker, connection_params
 
-sconn = namedtuple('sconn', ['fd', 'family', 'type', 'laddr', 'raddr', 'status', 'pid'])
 
-
-@unittest.skip('psutil')
 class ProcNetParserTest(TestCase):
     @mock.patch('pg_view.models.parsers.logger')
     @mock.patch('pg_view.models.parsers.psutil.net_connections')
@@ -101,7 +97,6 @@ class UtilsTest(TestCase):
         self.assertEqual('bar', get_dbname_from_path('/pgsql_bar/9.4/data'))
 
 
-@unittest.skip('psutil')
 class ProcWorkerTest(TestCase):
     def setUp(self):
         super(ProcWorkerTest, self).setUp()

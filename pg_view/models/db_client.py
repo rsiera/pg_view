@@ -111,7 +111,7 @@ class DBConnectionFinder(object):
 
     def detect_with_proc_net(self):
         parser = ProcNetParser(self.pid)
-        result = parser.match_socket_inodes()
+        result = parser.get_connections_from_sockets()
         if not result:
             logger.error(
                 'could not detect connection string from /proc/net for postgres process {0}'.format(self.pid))
