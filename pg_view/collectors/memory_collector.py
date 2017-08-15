@@ -100,7 +100,8 @@ class MemoryStatCollector(BaseStatCollector):
         self._do_refresh([raw_result])
         return raw_result
 
-    def _read_memory_data(self):
+    @staticmethod
+    def _read_memory_data():
         """ Read relevant data from /proc/meminfo. We are interesed in the following fields:
             MemTotal, MemFree, Buffers, Cached, Dirty, CommitLimit, Committed_AS
         """

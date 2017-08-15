@@ -96,7 +96,8 @@ class HostStatCollector(BaseStatCollector):
             logger.error('multiprocessing does not support cpu_count')
         return {'cores': cpus}
 
-    def _construct_sysname(self, attname, row, optional):
+    @staticmethod
+    def _construct_sysname(attname, row, optional):
         if len(row) < 3:
             return None
         return '{0} {1}'.format(row[0], row[2])

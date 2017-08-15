@@ -322,7 +322,7 @@ class PgStatCollector(BaseStatCollector):
 
         # Assume we managed to read the row if we can get its PID
         for cat in 'stat', 'io':
-            result.update(self._transform_input(raw_result.get(cat, ({} if cat == 'io' else []))))
+            result.update(self._transform_input(raw_result.get(cat, {} if cat == 'io' else [])))
         # generated columns
         result['cmdline'] = raw_result.get('cmd', None)
         if not is_backend:
@@ -362,7 +362,8 @@ class PgStatCollector(BaseStatCollector):
             logger.info("calculating memory for process {0}".format(pid))
         except IOError as e:
             logger.warning(
-                'Unable to read {0}: {1}, process memory information will be unavailable'.format(self.format(pid), e))
+                'Unable to read {0}: {1}, process memory information will be unavailable'.format(
+                    self.STATM_FILENAME.format(pid), e))
         finally:
             fp and fp.close()
         if statm and len(statm) >= 3:

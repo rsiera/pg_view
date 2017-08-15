@@ -23,7 +23,6 @@ class PartitionStatCollector(BaseStatCollector):
     DISK_STAT_FILE = '/proc/diskstats'
     DATA_NAME = 'data'
     XLOG_NAME = 'xlog'
-    XLOG_SUBDIR = 'pg_xlog/'
     BLOCK_SIZE = 1024
 
     def __init__(self, dbname, dbversion, work_directory, consumer):
@@ -151,7 +150,8 @@ class PartitionStatCollector(BaseStatCollector):
     def ident(self):
         return '{0} ({1}/{2})'.format(super(PartitionStatCollector, self).ident(), self.dbname, self.dbver)
 
-    def _dereference_dev_name(self, devname):
+    @staticmethod
+    def _dereference_dev_name(devname):
         return devname.replace('/dev/', '') if devname else None
 
     def refresh(self):
@@ -181,14 +181,18 @@ class PartitionStatCollector(BaseStatCollector):
         self._do_refresh(new_rows)
         return new_rows
 
-    def calculate_time_until_full(self, colname, prev, cur):
+    @staticmethod
+    def calculate_time_until_full(colname, prev, cur):
         # both should be expressed in common units, guaranteed by BLOCK_SIZE
-        if cur.get('path_size', 0) > 0 and prev.get('path_size', 0) > 0 and cur.get('space_left', 0) > 0:
-            if cur['path_size'] < prev['path_size']:
-                return cur['space_left'] / (prev['path_size'] - cur['path_size'])
+        if (cur.get('path_size', 0) > 0 and
+                prev.get('path_size', 0) > 0 and
+                cur.get('space_left', 0) > 0 and
+                cur['path_size'] < prev['path_size']):
+            return cur['space_left'] / (prev['path_size'] - cur['path_size'])
         return None
 
-    def get_io_data(self, pnames):
+    @staticmethod
+    def get_io_data(pnames):
         """ Retrieve raw data from /proc/diskstat (transformations are perfromed via io_list_transformation)"""
         result = {}
         found = 0  # stop if we found records for all partitions
@@ -220,14 +224,29 @@ class PartitionStatCollector(BaseStatCollector):
 
 class DetachedDiskStatCollector(Process):
     """ This class runs in a separate process and runs du and df """
-    BLOCK_SIZE = 1024
 
-    def __init__(self, q, work_directories):
+    BLOCK_SIZE = 1024
+    OLD_WAL_SUBDIR = '/pg_xlog/'
+    WAL_SUBDIR = '/pg_wal/'
+    NEW_WAL_SINCE = 10.0
+
+    def __init__(self, q, work_directories, db_version):
         super(DetachedDiskStatCollector, self).__init__()
         self.work_directories = work_directories
         self.q = q
         self.daemon = True
+        self.db_version = db_version
         self.df_cache = {}
+
+    @property
+    def wal_directory(self):
+        """ Since Postgresql 10.0 wal directory was renamed, so we need to
+            choose actual wal directory based on a db_version.
+        """
+        if self.db_version < DetachedDiskStatCollector.NEW_WAL_SINCE:
+            return DetachedDiskStatCollector.OLD_WAL_SUBDIR
+        else:
+            return DetachedDiskStatCollector.WAL_SUBDIR
 
     def run(self):
         while True:
@@ -246,14 +265,14 @@ class DetachedDiskStatCollector(Process):
         result = {'data': [], 'xlog': []}
         try:
             data_size = self.run_du(work_directory)
-            xlog_size = self.run_du(work_directory + '/pg_xlog/')
+            xlog_size = self.run_du(work_directory + self.wal_directory)
         except Exception as e:
             logger.error('Unable to read free space information for the pg_xlog and data '
                          'directories for the directory {0}: {1}'.format(work_directory, e))
         else:
             # XXX: why do we pass the block size there?
             result['data'] = str(data_size), work_directory
-            result['xlog'] = str(xlog_size), work_directory + '/pg_xlog'
+            result['xlog'] = str(xlog_size), work_directory + self.wal_directory
         return result
 
     def run_du(self, pathname, exclude=None):
@@ -289,10 +308,10 @@ class DetachedDiskStatCollector(Process):
         result = {'data': [], 'xlog': []}
         # obtain the device names
         data_dev = self.get_mounted_device(self.get_mount_point(work_directory))
-        xlog_dev = self.get_mounted_device(self.get_mount_point(work_directory + '/pg_xlog/'))
+        xlog_dev = self.get_mounted_device(self.get_mount_point(work_directory + self.wal_directory))
 
         data_vfs = self._get_or_update_df_cache(work_directory, data_dev)
-        xlog_vfs = self._get_or_update_df_cache(work_directory + '/pg_xlog/', xlog_dev)
+        xlog_vfs = self._get_or_update_df_cache(work_directory + self.wal_directory, xlog_dev)
 
         data_vfs_blocks = data_vfs.f_bsize / self.BLOCK_SIZE
         result['data'] = (data_dev, data_vfs.f_blocks * data_vfs_blocks, data_vfs.f_bavail * data_vfs_blocks)

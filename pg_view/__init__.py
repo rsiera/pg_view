@@ -54,6 +54,9 @@ def parse_args():
     parser.add_option('-H', '--help', help='show_help', action='help')
     parser.add_option('-v', '--verbose', help='verbose mode', action='store_true', dest='verbose')
     parser.add_option('-i', '--instance', help='name of the instance to monitor', action='store', dest='instance')
+    parser.add_option('-s', '--use-service',
+                      help='query the service file for the instance name provided',
+                      action='store_true', dest='use_service')
     parser.add_option('-t', '--tick', help='tick length (in seconds)',
                       action='store', dest='tick', type='int', default=1)
     parser.add_option('-o', '--output-method', help='send output to the following source', action='store',
@@ -136,13 +139,13 @@ def do_loop(screen, groups, output_method, collectors, consumer):
         # process input:
         consumer.consume()
         for collector in collectors:
-            if output_method == OUTPUT_METHOD.curses:
+            if output_method == OUTPUT_METHOD.curses and not poll_keys(screen, output):
                 if not poll_keys(screen, output):
                     # bail out immediately
                     return
 
             process_single_collector(collector, flags.filter_aux)
-            if output_method == OUTPUT_METHOD.curses:
+            if output_method == OUTPUT_METHOD.curses and not poll_keys(screen, output):
                 if not poll_keys(screen, output):
                     return
 
@@ -192,15 +195,14 @@ def main():
     # set basic logging
     setup_logger(options)
 
-    user_dbname = options.instance
-    user_dbver = options.version
     clusters = []
 
-    # now try to read the configuration file
-    config = (read_configuration(options.config_file) if options.config_file else None)
+    config = read_configuration(options.config_file) if options.config_file else None
+    dbversion = None
+    # configuration file takes priority over the rest of database connection information sources.
     if config:
         for instance in config:
-            if user_dbname and instance != user_dbname:
+            if options.instance and instance != options.instance:
                 continue
             # pass already aquired connections to make sure we only list unique clusters.
             db_client = DBClient.from_config(config[instance])
@@ -215,8 +217,7 @@ def main():
                 clusters.append(cluster)
 
     elif options.host:
-        # try to connect to the database specified by command-line options
-        instance = options.instance or "default"
+        # connect to the database using the connection string supplied from command-line
         db_client = DBClient.from_options(options)
         try:
             cluster = db_client.establish_user_defined_connection(instance, clusters)
@@ -226,18 +227,27 @@ def main():
             pass
         else:
             clusters.append(cluster)
+    elif options.use_service and options.instance:
+        # connect to the database using the service name
+        if not establish_user_defined_connection(options.instance, {'service': options.instance}, clusters):
+            logger.error("unable to continue with cluster {0}".format(options.instance))
     else:
         # do autodetection
         postmasters = ProcWorker().get_postmasters_directories()
         # get all PostgreSQL instances
         for result_work_dir, connection_params in postmasters.items():
-            # if user requested a specific database name and version - don't try to connect to others
+            (ppid, dbversion, dbname) = connection_params
             try:
-                validate_autodetected_conn_param(user_dbname, user_dbver, result_work_dir, connection_params)
+                validate_autodetected_conn_param(dbname, dbversion, result_work_dir, connection_params)
             except InvalidConnectionParamError:
                 continue
-            db_client = DBClient.from_postmasters(
-                result_work_dir, connection_params.pid, connection_params.version, options)
+
+            if options.instance:
+                if dbname != options.instance or not result_work_dir or not ppid:
+                    continue
+                if options.version is not None and dbversion != options.version:
+                    continue
+            db_client = DBClient.from_postmasters(result_work_dir, ppid, dbversion, options)
             if db_client is None:
                 continue
             conn = db_client.connection_builder.build_connection()
@@ -248,10 +258,10 @@ def main():
                 pgcon = None
             if pgcon:
                 desc = make_cluster_desc(
-                    name=connection_params.dbname,
-                    version=connection_params.version,
+                    name=dbname,
+                    version=dbversion,
                     workdir=result_work_dir,
-                    pid=connection_params.pid,
+                    pid=ppid,
                     pgcon=pgcon,
                     conn=conn
                 )
@@ -269,8 +279,9 @@ def main():
         # initialize the disks stat collector process and create an exchange queue
         q = JoinableQueue(1)
         work_directories = [cl['wd'] for cl in clusters if 'wd' in cl]
+        dbversion = dbversion or clusters[0]['ver']
 
-        collector = DetachedDiskStatCollector(q, work_directories)
+        collector = DetachedDiskStatCollector(q, work_directories, dbversion)
         collector.start()
         consumer = DiskCollectorConsumer(q)
 
@@ -303,7 +314,7 @@ def main():
 
 
 def setup_logger(options):
-    logger.setLevel((logging.INFO if options.verbose else logging.ERROR))
+    logger.setLevel(logging.INFO if options.verbose else logging.ERROR)
     if options.log_file:
         LOG_FILE_NAME = options.log_file
         # truncate the former logs

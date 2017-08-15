@@ -172,7 +172,7 @@ class ProcNetParser(object):
         self.unix_socket_header_len = 0
         # initialize the sockets hash with the contents of unix
         # and tcp sockets. tcp IPv6 is also read if it's present
-        for fname in (self.NET_UNIX_FILENAME, self.NET_TCP_FILENAME):
+        for fname in self.NET_UNIX_FILENAME, self.NET_TCP_FILENAME:
             self.read_socket_file(fname)
         if os.access(self.NET_TCP6_FILENAME, os.R_OK):
             self.read_socket_file(ProcNetParser.NET_TCP6_FILENAME)
